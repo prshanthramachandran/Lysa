@@ -28,14 +28,14 @@ pip install -r requirements.txt
 python server.py
 ```
 
-Then open http://localhost:8050 in Chrome, Firefox, or Safari. The first launch creates an `uploads/` folder for cached image files (gitignored).
+Then open http://localhost:8050 in **Chrome** (recommended). The first launch creates an `uploads/` folder for cached image files (gitignored).
 
 For installation, the interface walkthrough, and a tools cheatsheet, see [docs/Lysa-Manual.pdf](docs/Lysa-Manual.pdf).
 
 ## Requirements
 
 - Python 3.9+
-- A modern browser (Chrome / Firefox / Safari / Edge — anything with WebGL2)
+- **Chrome** (recommended — the only browser Lysa is actively tested in). Firefox, Safari, and Edge should work since Lysa uses standard WebGL2, but they aren't extensively validated.
 - ~2× your largest LIF file's size in free disk space (uploads are content-addressed and dedup, but you still need room for the originals)
 
 ## License
