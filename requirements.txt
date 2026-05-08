@@ -1,0 +1,9 @@
+fastapi>=0.100.0
+uvicorn>=0.20.0
+pillow>=10.0.0
+scikit-image>=0.21.0
+numpy>=1.24.0
+scipy>=1.10.0
+aiofiles>=23.0.0
+python-multipart>=0.0.6
+liffile[all]>=2025.1.25

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#4ecdc4" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#4ecdc4" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#4ecdc4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="#0a0e1a"/>
+  <!-- Rings -->
+  <circle cx="32" cy="32" r="10" fill="none" stroke="#4ecdc4" stroke-width="1.2" stroke-opacity="0.9"/>
+  <circle cx="32" cy="32" r="15" fill="none" stroke="#4ecdc4" stroke-width="1.0" stroke-opacity="0.75"/>
+  <circle cx="32" cy="32" r="20" fill="none" stroke="#4ecdc4" stroke-width="0.8" stroke-opacity="0.6"/>
+  <circle cx="32" cy="32" r="24.5" fill="none" stroke="#4ecdc4" stroke-width="0.7" stroke-opacity="0.45"/>
+  <!-- Crosshairs -->
+  <line x1="32" y1="28" x2="32" y2="5" stroke="#4ecdc4" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="32" y1="36" x2="32" y2="59" stroke="#4ecdc4" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="28" y1="32" x2="5" y2="32" stroke="#4ecdc4" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="36" y1="32" x2="59" y2="32" stroke="#4ecdc4" stroke-width="0.6" stroke-opacity="0.4"/>
+  <!-- Glow + dot -->
+  <circle cx="32" cy="32" r="6" fill="url(#glow)"/>
+  <circle cx="32" cy="32" r="2" fill="#4ecdc4"/>
+  <circle cx="32" cy="32" r="0.8" fill="#ffffff" fill-opacity="0.7"/>
+</svg>

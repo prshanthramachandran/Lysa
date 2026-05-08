@@ -1,0 +1,43 @@
+# --- Lysa runtime data --------------------------------------------------------
+# Uploaded image cache. Files are content-addressed by sha1, so re-uploads
+# dedupe — but they're still huge. Never commit.
+uploads/
+
+# Saved sessions (user-specific UI state). Could contain references to local
+# files that won't exist on someone else's machine.
+sessions/
+
+# Backend log file used by the dev server
+/tmp/lysa-server.log
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# --- macOS / editors ----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+.~lock.*
+
+# --- Generated documentation artifacts (keep the .md/.html sources, not PDFs) -
+# Comment this out if you want to commit the rendered PDF.
+# docs/*.pdf
+
+# --- Old manual artifacts (superseded by docs/Lysa-Manual.{html,pdf}) ----------
+# These are kept on disk for reference but shouldn't be committed; they're
+# easy to accidentally re-add via "Select all" in GitHub Desktop.
+MANUAL.md
+Lysa_Manual_v2/
+Lysa_Manual_v2.zip
+Lysa_Manual_v2_package.zip
+zibJZw1w

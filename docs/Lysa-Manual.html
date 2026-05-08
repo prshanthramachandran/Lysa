@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lysa — User Manual</title>
+<style>
+:root {
+  --accent: #4ecdc4;
+  --accent-dark: #2a8c87;
+  --ink: #1a1f2e;
+  --muted: #5a6478;
+  --rule: #d8dde8;
+  --bg-soft: #f4f6fa;
+  --code-bg: #f0f2f6;
+}
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: var(--ink);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 28px;
+}
+h1, h2, h3, h4 {
+  color: var(--ink);
+  font-weight: 600;
+  margin-top: 1.6em;
+  margin-bottom: 0.4em;
+  page-break-after: avoid;
+}
+h1 { font-size: 26pt; letter-spacing: -0.5px; margin-top: 0; }
+h2 { font-size: 16pt; border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
+h3 { font-size: 13pt; color: var(--accent-dark); }
+h4 { font-size: 11pt; color: var(--muted); margin-top: 1em; margin-bottom: 0.2em; text-transform: uppercase; letter-spacing: 0.5px; font-size: 9.5pt; }
+p { margin: 0.5em 0; }
+ul, ol { margin: 0.4em 0 0.8em 0; padding-left: 1.4em; }
+li { margin: 0.2em 0; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9pt;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 10px 12px;
+  border-radius: 5px;
+  overflow-x: auto;
+  font-size: 9pt;
+  line-height: 1.45;
+  page-break-inside: avoid;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+  font-size: 9.5pt;
+  page-break-inside: avoid;
+}
+th, td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th { background: var(--bg-soft); font-weight: 600; color: var(--muted); text-transform: uppercase; font-size: 8.5pt; letter-spacing: 0.5px; }
+td.key, td.shortcut { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; white-space: nowrap; }
+.kbd {
+  display: inline-block;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9pt;
+  background: white;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin: 0 1px;
+  color: var(--ink);
+}
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-soft);
+  padding: 8px 12px;
+  margin: 1em 0;
+  border-radius: 0 4px 4px 0;
+}
+.callout strong { color: var(--accent-dark); }
+.cover {
+  text-align: center;
+  padding: 80px 20px 60px;
+  page-break-after: always;
+}
+.cover h1 {
+  font-size: 48pt;
+  color: var(--accent-dark);
+  margin: 0;
+  letter-spacing: -1px;
+}
+.cover .subtitle {
+  font-size: 14pt;
+  color: var(--muted);
+  margin: 12px 0 4px;
+}
+.cover .meta {
+  font-size: 10pt;
+  color: var(--muted);
+  margin-top: 60px;
+}
+.toc {
+  page-break-after: always;
+}
+.toc h2 { margin-top: 0; }
+.toc ol { padding-left: 1.6em; }
+.toc li { margin: 4px 0; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover { color: var(--accent-dark); }
+section { page-break-before: always; }
+section.no-break { page-break-before: auto; }
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+  font-size: 9.5pt;
+}
+.tool-grid > div { padding: 4px 0; border-bottom: 1px dotted var(--rule); }
+.tool-grid b { color: var(--accent-dark); }
+@media print {
+  body { padding: 0; max-width: none; }
+  .cover, .toc, section { page-break-after: always; }
+  pre, table, .callout { page-break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<div class="cover">
+  <h1>lysa</h1>
+  <div class="subtitle">Microscopy Image Viewer &amp; Analysis Tool</div>
+  <div class="subtitle">User Manual</div>
+  <div class="meta">Version 3.0 · 2026</div>
+</div>
+
+<!-- ==================== TABLE OF CONTENTS ==================== -->
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#intro">Quick Introduction</a></li>
+    <li><a href="#install">Installation &amp; Running</a></li>
+    <li><a href="#interface">The Interface</a></li>
+    <li><a href="#opening">Opening Images</a></li>
+    <li><a href="#tools">Drawing &amp; Measurement Tools</a></li>
+    <li><a href="#channels">Channels, Contrast &amp; LUTs</a></li>
+    <li><a href="#tiled">Tiled Mode (Large Images)</a></li>
+    <li><a href="#analysis">Analysis Features</a></li>
+    <li><a href="#sessions">Sessions, Batch &amp; Export</a></li>
+    <li><a href="#cheat">Cheatsheet</a></li>
+  </ol>
+</div>
+
+<!-- ==================== 1. INTRO ==================== -->
+<section id="intro" class="no-break">
+<h2>1. Quick Introduction</h2>
+
+<p>Lysa is a browser-based viewer for microscopy image data. It runs locally on your machine: you start a small Python server, open <code>http://localhost:8050</code>, and your data never leaves your computer.</p>
+
+<p>What makes it different from opening a TIFF in Preview or running ImageJ:</p>
+
+<ul>
+  <li><b>It keeps 16-bit data 16-bit.</b> 16-bit fluorescence images don't get force-converted to 8-bit on load. Window/level adjustments use the native bit depth.</li>
+  <li><b>It opens Leica LIF files directly.</b> No converting to TIFF first. Each sub-image inside a LIF becomes its own entry; you can filter by name pattern (e.g. <code>*Merged*</code>) to skip raw stacks you don't need.</li>
+  <li><b>Each channel renders independently.</b> A 4-channel image (3 fluorophores + brightfield) shows each channel as its own layer with its own LUT, contrast, gamma, opacity, and blend mode — you don't have to squeeze them into R/G/B slots.</li>
+  <li><b>Big images don't choke the browser.</b> Past 15 megapixels, Lysa switches to a tiled pyramid renderer (the same approach used by online slide-scanner viewers) and panning a 1.3 GB LIF stays smooth.</li>
+  <li><b>Measurements feel like measurements, not exports.</b> Distance, angle, line profile, ROI statistics, multi-point counting — drawn on the image, saved with the session, exported to Excel when you're done.</li>
+</ul>
+
+<div class="callout">
+<strong>Who this is for.</strong> Biologists working with confocal / wide-field microscopy data who want a fast, repeatable way to view, annotate, and pull numbers out of multi-channel images — without writing scripts and without losing precision.
+</div>
+
+</section>
+
+<!-- ==================== 2. INSTALL ==================== -->
+<section id="install">
+<h2>2. Installation &amp; Running</h2>
+
+<h3>Requirements</h3>
+<ul>
+  <li>Python 3.9 or later</li>
+  <li>A modern browser with WebGL 2 (Chrome, Firefox, Safari, Edge — all current versions qualify)</li>
+  <li>Free disk space roughly equal to your largest LIF file (uploads are cached and content-addressed, so duplicate uploads of the same file don't accumulate)</li>
+</ul>
+
+<h3>First-time setup</h3>
+<pre><code>git clone https://github.com/prshanthramachandran/Lysa.git
+cd Lysa
+pip install -r requirements.txt</code></pre>
+
+<h3>Running</h3>
+<pre><code>python server.py</code></pre>
+
+<p>Then open <code>http://localhost:8050</code>. The terminal will show <code>Application startup complete</code> when it's ready.</p>
+
+<p>To stop the server: <span class="kbd">Ctrl</span> + <span class="kbd">C</span> in the terminal.</p>
+
+<div class="callout">
+<strong>Tip.</strong> Lysa uses uvicorn's auto-reload, so editing the source code while the server is running will pick up the changes automatically — handy if you're customizing it.
+</div>
+
+</section>
+
+<!-- ==================== 3. INTERFACE ==================== -->
+<section id="interface">
+<h2>3. The Interface</h2>
+
+<p>The window splits into four regions:</p>
+
+<table>
+<tr><th style="width:140px">Region</th><th>Purpose</th></tr>
+<tr><td><b>Left sidebar</b></td><td>Image library — every image you've loaded, with thumbnails. Drop zones for files and folders. LIF loading options. Session save/load and PDF export.</td></tr>
+<tr><td><b>Top toolbar</b></td><td>Parallel-view count (how many cells in the grid), auto/manual layout, the Tiled toggle, Merge mode, and the Open Images button.</td></tr>
+<tr><td><b>Center viewer</b></td><td>The image grid. One or more cells, each showing one image, sharing pan/zoom when in Auto layout. The currently active cell has a cyan outline.</td></tr>
+<tr><td><b>Right panels</b></td><td>Tools, channel/contrast adjustments, transforms, analysis features, histogram, image info. All collapsible — click a section header to expand.</td></tr>
+</table>
+
+<p>Below the viewer is a <b>status bar</b> showing the cursor's pixel coordinates, the RGB(A) value at that pixel, the image dimensions, dtype, value range, filename, and current zoom level.</p>
+
+<h3>The right-hand panels at a glance</h3>
+
+<table>
+<tr><th>Panel</th><th>What it does</th></tr>
+<tr><td><b>Tools</b></td><td>Tool palette — pan, ROIs, measurements, annotations, crop. See the next section.</td></tr>
+<tr><td><b>Channels</b></td><td>The main per-channel control: each source channel becomes a row with its own LUT, contrast sliders, gamma, opacity, visibility, and blend mode.</td></tr>
+<tr><td><b>Contrast Limits</b></td><td>Global window/level (used when there's just one channel, or as a coarse override).</td></tr>
+<tr><td><b>Colormap / LUT</b></td><td>Single-channel colormap (viridis, magma, etc.) plus invert toggle.</td></tr>
+<tr><td><b>Display</b></td><td>Brightness, opacity, attenuation — light cosmetic adjustments that don't affect saved measurements.</td></tr>
+<tr><td><b>Transform</b></td><td>Rotate, flip, crop. Modifies the underlying pixels (the result becomes the new "current" image; reload to undo).</td></tr>
+<tr><td><b>Filters &amp; Preprocessing</b></td><td>Gaussian, median, sharpen, contrast-stretch — applied server-side, replaces the active image.</td></tr>
+<tr><td><b>Thresholding</b></td><td>Otsu (automatic) or manual threshold. Live preview as a colored overlay; "Apply" bakes it into a binary mask.</td></tr>
+<tr><td><b>Segmentation</b></td><td>Watershed-style splitting of thresholded blobs into individual objects, with per-object stats.</td></tr>
+<tr><td><b>Root Growth</b></td><td>Multi-step workflow for plant root growth experiments — define plates, genotype boxes, click root tips across timepoints.</td></tr>
+<tr><td><b>Annotations</b></td><td>Visibility toggle, default color/width/font, save/load JSON.</td></tr>
+<tr><td><b>Batch Analysis</b></td><td>Apply the active image's ROI / adjustments / threshold / crop to every open image at once.</td></tr>
+<tr><td><b>Histogram</b></td><td>Live per-channel intensity histogram.</td></tr>
+<tr><td><b>Image Info</b></td><td>Filename, dimensions, dtype, channels, file size, ingest stats, pixel size if known.</td></tr>
+<tr><td><b>Scale Bar</b></td><td>Pixel-size readout used by the scale bar overlay; auto-detected from TIFF metadata or set via the Calibrate tool.</td></tr>
+</table>
+
+</section>
+
+<!-- ==================== 4. OPENING ==================== -->
+<section id="opening">
+<h2>4. Opening Images</h2>
+
+<h3>Drag and drop</h3>
+<p>Drop a single image file or a folder onto the left-sidebar drop zones. Folders load every supported file inside (PNG, JPG, TIFF, BMP, GIF, LIF).</p>
+
+<h3>The Open Images button</h3>
+<p>Top-right of the toolbar — opens a native file picker.</p>
+
+<h3>LIF files</h3>
+<p>Leica LIF containers hold many sub-images per file (different acquisitions, channels, time points). When you drop a LIF, you get three options under <b>"When dropping a LIF"</b> in the sidebar:</p>
+
+<table>
+<tr><td class="key" style="width:120px"><b>Load all</b></td><td>Every sub-image becomes its own library entry.</td></tr>
+<tr><td class="key"><b>Merged only</b></td><td>Only sub-images whose name contains <code>Merged</code> — usually the channel-merged composites and not the per-channel raws.</td></tr>
+<tr><td class="key"><b>Custom</b></td><td>A glob pattern you type into the box. <code>*Col_3*</code> filters to a single column; <code>*t6*</code> filters to a timepoint.</td></tr>
+</table>
+
+<p>Each loaded sub-image gets a name like <code>20260506_MfnG_lines_roottip_t6/Col_2_Merged</code> in the sidebar — the part before the slash is the LIF filename, after it is the sub-image label.</p>
+
+<h3>The image library</h3>
+<p>Each image in the sidebar shows a thumbnail, the filename (truncated), and metadata (dimensions, mode, file size). The <b>eye icon</b> toggles whether that image appears in the grid view. The <b>checkbox</b> selects images for batch operations.</p>
+
+<p>Click anywhere else on the card to open that image in the active grid cell.</p>
+
+<h3>Supported formats</h3>
+<table>
+<tr><th>Format</th><th>Notes</th></tr>
+<tr><td><code>.png</code> <code>.jpg</code> <code>.bmp</code> <code>.gif</code></td><td>Standard formats. Treated as 8-bit unless otherwise tagged.</td></tr>
+<tr><td><code>.tif</code> <code>.tiff</code></td><td>Multi-bit-depth. Preserves 16-bit precision. Reads ImageJ pixel-size tags if present.</td></tr>
+<tr><td><code>.lif</code></td><td>Leica LAS X. Multi-image, multi-channel, with metadata for channel naming.</td></tr>
+</table>
+
+</section>
+
+<!-- ==================== 5. TOOLS ==================== -->
+<section id="tools">
+<h2>5. Drawing &amp; Measurement Tools</h2>
+
+<p>Tools live in the <b>Tools</b> panel (top of the right sidebar). Click an icon, or use the keyboard shortcut shown in the icon's tooltip. Each tool has a single-letter shortcut.</p>
+
+<p>While a tool is active, the cursor becomes a crosshair over the image. Pan tool is the default; switch to it (<span class="kbd">H</span>) when you just want to move around without drawing.</p>
+
+<h3>ROI tools (regions of interest)</h3>
+<table>
+<tr><th>Tool</th><th>Shortcut</th><th>How to use</th></tr>
+<tr><td>Rectangle ROI</td><td class="shortcut"><span class="kbd">R</span></td><td>Click and drag to define a rectangle.</td></tr>
+<tr><td>Ellipse ROI</td><td class="shortcut"><span class="kbd">E</span></td><td>Click and drag to define the bounding box of an ellipse.</td></tr>
+<tr><td>Polygon ROI</td><td class="shortcut"><span class="kbd">G</span></td><td>Click each vertex; double-click (or click the first vertex) to close.</td></tr>
+</table>
+
+<p>Saved ROIs appear in the <b>ROI Measurements</b> panel below the tool palette: name, area in px and physical units (if calibrated), mean / min / max / std-dev across each channel. The eye icon toggles visibility on the canvas; the trash icon deletes.</p>
+
+<h3>Point and line tools</h3>
+<table>
+<tr><th>Tool</th><th>Shortcut</th><th>How to use</th></tr>
+<tr><td>Multi-Point</td><td class="shortcut"><span class="kbd">P</span></td><td>Click to add labelled points (cell counting, landmark marking). Double-click to finalize the point set.</td></tr>
+<tr><td>Line Profile</td><td class="shortcut"><span class="kbd">L</span></td><td>Click waypoints to build a polyline; double-click to finish. Plots intensity along the line.</td></tr>
+<tr><td>Freehand</td><td class="shortcut"><span class="kbd">F</span></td><td>Press, drag a continuous curve, release to finish.</td></tr>
+</table>
+
+<h3>Measurement tools</h3>
+<table>
+<tr><th>Tool</th><th>Shortcut</th><th>How to use</th></tr>
+<tr><td>Distance</td><td class="shortcut"><span class="kbd">M</span></td><td>Click two points. The distance label appears mid-line, in pixels and physical units (if calibrated).</td></tr>
+<tr><td>Angle</td><td class="shortcut"><span class="kbd">A</span></td><td>Click the vertex first, then the two arm endpoints. Saved as soon as the third click lands.</td></tr>
+<tr><td>Calibrate</td><td class="shortcut"><span class="kbd">C</span></td><td>Draw a line of known length, then enter the real-world distance. Sets the image's pixel size for all subsequent measurements.</td></tr>
+</table>
+
+<h3>Crop tools</h3>
+<table>
+<tr><th>Tool</th><th>How to use</th></tr>
+<tr><td>Crop (drag)</td><td>Drag a rectangle. A confirm/cancel popover appears.</td></tr>
+<tr><td>Crop (4-corner)</td><td>Click 4 corners — useful when the area you want isn't axis-aligned.</td></tr>
+</table>
+
+<p>Both replace the image with the cropped result. Reload the image (sidebar) to undo.</p>
+
+<h3>Annotations</h3>
+
+<p>Annotations are decorative — they ride on top of the image but aren't measurements. Use them for figure prep.</p>
+
+<table>
+<tr><th>Tool</th><th>Shortcut</th><th>How to use</th></tr>
+<tr><td>Text</td><td class="shortcut"><span class="kbd">T</span></td><td>Click to place; type the text in the prompt.</td></tr>
+<tr><td>Arrow</td><td class="shortcut"><span class="kbd">W</span></td><td>Drag from tail to head.</td></tr>
+<tr><td>Scribble</td><td class="shortcut"><span class="kbd">S</span></td><td>Press and drag — freehand pen.</td></tr>
+<tr><td>Annotation Rectangle</td><td class="shortcut"><span class="kbd">⇧ R</span></td><td>Decorative box (no measurement saved).</td></tr>
+<tr><td>Annotation Ellipse</td><td class="shortcut"><span class="kbd">⇧ E</span></td><td>Decorative ellipse.</td></tr>
+</table>
+
+<p>The <b>Annotations</b> panel sets the default color, line width, and font. Existing annotations stay at the color they were drawn with.</p>
+
+</section>
+
+<!-- ==================== 6. CHANNELS ==================== -->
+<section id="channels">
+<h2>6. Channels, Contrast &amp; LUTs</h2>
+
+<p>For multi-channel images, the <b>Channels</b> panel is where you'll spend most of your display-tweaking time.</p>
+
+<h3>One row per source channel</h3>
+<p>Each row controls one channel of the source image, independently of the others. You can:</p>
+
+<ul>
+  <li><b>Toggle visibility</b> with the eye icon</li>
+  <li><b>Pick a LUT</b> from the dropdown — Gray, Red, Green, Blue, Cyan, Magenta, Yellow, plus colormaps (Viridis, Magma, Inferno, Hot, Cool, Turbo)</li>
+  <li><b>Drag the contrast Min / Max sliders</b> in the channel's native units (e.g. 0 to 65535 for 16-bit)</li>
+  <li><b>Set Gamma</b> from 0.1 to 5.0</li>
+  <li><b>Set Opacity</b> from 0 to 1</li>
+  <li><b>Pick a Blend mode</b>: Additive (sum), Max (brightest channel wins), or Over (alpha blend on top)</li>
+</ul>
+
+<h3>Auto-contrast on load</h3>
+<p>When you open an image, each channel's Min/Max defaults to its own 1st–99th percentile — the same stretch the thumbnail uses. Bright channels won't look saturated and dim channels won't look invisible. You can re-apply this any time with the <b>Auto</b> button in each channel row.</p>
+
+<table>
+<tr><th>Button</th><th>Action</th></tr>
+<tr><td><b>Auto</b></td><td>Set Min/Max to this channel's 1/99 percentile (best general-purpose default).</td></tr>
+<tr><td><b>Min/Max</b></td><td>Stretch to the channel's actual min and max. Sensitive to outlier pixels.</td></tr>
+<tr><td><b>Full</b></td><td>Use the full dtype range (0..255 for 8-bit, 0..65535 for 16-bit). Often very dim — useful as a reset.</td></tr>
+</table>
+
+<h3>Default channel colors</h3>
+<p>Lysa picks defaults based on what kind of image it is:</p>
+
+<table>
+<tr><th>Image type</th><th>Default channel colors</th></tr>
+<tr><td>Stored RGB / RGBA</td><td>Channel 0 → Red, channel 1 → Green, channel 2 → Blue. Matches the file's natural meaning.</td></tr>
+<tr><td>Fluorescence (LIF, multi-channel TIFF)</td><td>Channel 0 → Green (typical 1st fluorophore), 1 → Red, 2 → Blue, 3 → Gray (brightfield), then Magenta, Yellow, Cyan rotated.</td></tr>
+</table>
+
+<p>You can change any channel's color at any time from its row's dropdown.</p>
+
+<div class="callout">
+<strong>Why this matters.</strong> A GFP image saved as a 2-channel "RGB" TIFF actually has the green signal in channel 1 and channel 0 empty. Before Lysa got the RGB-mode detection right, the default was the fluorescence convention, so channel 1 (the green signal) ended up rendered with the red LUT — blown-out red specimen on a black field. Now stored-RGB images render the way their thumbnail looks.
+</div>
+
+<h3>Reset</h3>
+<p>The <b>Reset All</b> link in the Channels panel header clears all customization for the active image and re-applies the defaults.</p>
+
+</section>
+
+<!-- ==================== 7. TILED ==================== -->
+<section id="tiled">
+<h2>7. Tiled Mode (Large Images)</h2>
+
+<p>Loading a 1.3 GB LIF as a single canvas would chew through browser memory and freeze the tab. Lysa avoids this by switching to a <b>tiled pyramid renderer</b> — the image is broken into 512×512-pixel tiles at multiple resolutions, and only the tiles needed for the current view are decoded.</p>
+
+<h3>When does it kick in?</h3>
+<ul>
+  <li><b>Automatically</b> for images at or above the megapixel threshold set in the sidebar (default: 15 MP). Adjust with the input under <b>"Auto-enable Tiled mode for images ≥"</b>.</li>
+  <li><b>Manually</b> via the <b>Tiled</b> toggle button in the top toolbar — forces every open image into tiled mode.</li>
+</ul>
+
+<h3>What's different in tiled mode?</h3>
+<ul>
+  <li>Pan and zoom feel like Google Maps — smooth, asynchronous tile loading.</li>
+  <li>Each channel renders into its own background OpenSeadragon viewer, then a WebGL2 shader composites them according to your LUT/contrast/blend settings. You don't see the per-channel viewers; what you see is the composite.</li>
+  <li>The full bit-depth raw data isn't fetched (it would exhaust browser memory for a 1.3 GB file). The "Auto" button reads its 1/99 percentiles from the server-side pyramid instead — same numbers, same outcome.</li>
+  <li>The <b>Filters &amp; Preprocessing</b> and <b>Transform</b> panels still work — the server applies the operation, then the tile pyramid is rebuilt.</li>
+</ul>
+
+<h3>Threshold for switching</h3>
+<p>The default 15 MP threshold is conservative — even modern laptops handle 15 MP images fine in legacy mode. Raise it (e.g. 30 MP) if you have lots of RAM and want full 16-bit-precision raw data for measurements; lower it if your machine struggles with smaller images.</p>
+
+</section>
+
+<!-- ==================== 8. ANALYSIS ==================== -->
+<section id="analysis">
+<h2>8. Analysis Features</h2>
+
+<h3>Thresholding</h3>
+<p>Open the <b>Thresholding</b> panel. Pick a method (<b>Otsu</b> for automatic, <b>Manual</b> for a slider) and a value — the threshold preview overlays on the image as a colored mask. The histogram below shows the threshold position relative to the intensity distribution.</p>
+
+<p><b>Apply on all</b> runs the same threshold method against every open image — useful for batch quantification.</p>
+
+<h3>Segmentation</h3>
+<p>Once a threshold is set, Segmentation can split the binary mask into individual objects (watershed-style) and report per-object statistics — area, centroid, intensity in each channel. The per-object table appears below the panel; click an object's row to highlight it on the image.</p>
+
+<h3>Root Growth</h3>
+<p>A specialized multi-step workflow for plant root experiments. The panel walks you through:</p>
+<ol>
+  <li><b>Define plates</b> — drag rectangles around each agar plate</li>
+  <li><b>Define genotype boxes</b> — drag rectangles around each genotype's seedlings within the plates</li>
+  <li><b>Click root tips</b> at each timepoint — Lysa records labelled coordinates and computes growth rates</li>
+</ol>
+
+<h3>Filters &amp; Preprocessing</h3>
+<p>Server-side image filters: Gaussian blur, median, unsharp mask, contrast stretch, and a few others. Each replaces the active image with the filtered result. The <b>Reset</b> link in the panel header restores the original.</p>
+
+<h3>Histogram</h3>
+<p>Live per-channel intensity histogram of the active image. Updates as you adjust contrast.</p>
+
+</section>
+
+<!-- ==================== 9. SESSIONS ==================== -->
+<section id="sessions">
+<h2>9. Sessions, Batch &amp; Export</h2>
+
+<h3>Save / Load Session</h3>
+<p>The <b>Save Session</b> button (left sidebar) writes a JSON file containing:</p>
+<ul>
+  <li>The list of currently open images (paths, not pixel data)</li>
+  <li>All saved ROIs, polylines, points, measurements, and annotations per image</li>
+  <li>Per-image channel settings (LUTs, contrast windows, gamma, opacity, blend modes)</li>
+  <li>UI state: parallel-view count, tiled mode, active tab</li>
+</ul>
+
+<p><b>Load Session</b> restores everything. The image files themselves need to still exist at their original paths — sessions reference, they don't archive.</p>
+
+<h3>Batch Analysis</h3>
+<p>The <b>Batch Analysis</b> panel takes the operation you set up on the active image and applies it to every other open image. Buttons:</p>
+
+<table>
+<tr><td><b>Apply last ROI to all</b></td><td>Copies the most recently drawn ROI onto every open image at the same coordinates. Useful when all images are the same field of view (e.g., timepoints).</td></tr>
+<tr><td><b>Apply current adjustments</b></td><td>Copies the active image's contrast / LUT / channel settings to every open image.</td></tr>
+<tr><td><b>Run threshold on all</b></td><td>Applies the active threshold method/value to every open image.</td></tr>
+<tr><td><b>Apply last crop to all</b></td><td>Copies the same crop rectangle to every open image.</td></tr>
+<tr><td><b>Export Everything</b></td><td>Writes the per-image stats plus histograms and charts to one Excel workbook.</td></tr>
+</table>
+
+<h3>Export PDF</h3>
+<p>Bottom-left button. Renders all open images plus their ROI tables, measurements, and histograms into a single PDF — good for figure prep or supplementary material.</p>
+
+</section>
+
+<!-- ==================== 10. CHEATSHEET ==================== -->
+<section id="cheat">
+<h2>10. Cheatsheet</h2>
+
+<h3>Keyboard shortcuts</h3>
+<table>
+<tr><th>Key</th><th>Action</th></tr>
+<tr><td class="shortcut"><span class="kbd">H</span></td><td>Pan tool</td></tr>
+<tr><td class="shortcut"><span class="kbd">R</span></td><td>Rectangle ROI</td></tr>
+<tr><td class="shortcut"><span class="kbd">E</span></td><td>Ellipse ROI</td></tr>
+<tr><td class="shortcut"><span class="kbd">G</span></td><td>Polygon ROI (double-click to close)</td></tr>
+<tr><td class="shortcut"><span class="kbd">P</span></td><td>Multi-Point</td></tr>
+<tr><td class="shortcut"><span class="kbd">L</span></td><td>Line Profile (double-click to finish)</td></tr>
+<tr><td class="shortcut"><span class="kbd">M</span></td><td>Distance Measure</td></tr>
+<tr><td class="shortcut"><span class="kbd">A</span></td><td>Angle (vertex first, then arm endpoints)</td></tr>
+<tr><td class="shortcut"><span class="kbd">F</span></td><td>Freehand</td></tr>
+<tr><td class="shortcut"><span class="kbd">C</span></td><td>Calibrate (set pixel size)</td></tr>
+<tr><td class="shortcut"><span class="kbd">T</span></td><td>Text annotation</td></tr>
+<tr><td class="shortcut"><span class="kbd">W</span></td><td>Arrow annotation</td></tr>
+<tr><td class="shortcut"><span class="kbd">S</span></td><td>Scribble annotation</td></tr>
+<tr><td class="shortcut"><span class="kbd">⇧ R</span></td><td>Annotation Rectangle</td></tr>
+<tr><td class="shortcut"><span class="kbd">⇧ E</span></td><td>Annotation Ellipse</td></tr>
+<tr><td class="shortcut"><span class="kbd">+</span> / <span class="kbd">=</span></td><td>Zoom in</td></tr>
+<tr><td class="shortcut"><span class="kbd">-</span></td><td>Zoom out</td></tr>
+<tr><td class="shortcut"><span class="kbd">0</span></td><td>Fit to view</td></tr>
+</table>
+
+<h3>Common workflows</h3>
+
+<h4>Quick-look at a LIF</h4>
+<ol>
+  <li>Drop the LIF into the sidebar; choose <b>Merged only</b> if you don't need the per-channel raws.</li>
+  <li>Click any sub-image card to open it. Tiled mode auto-engages above 15 MP.</li>
+  <li>Use the <b>Channels</b> panel to fine-tune contrast per channel. Auto button if defaults look off.</li>
+</ol>
+
+<h4>Measure 20 root tips across timepoints</h4>
+<ol>
+  <li>Open all timepoint images (drop the folder).</li>
+  <li>Set parallel views to a number that fits — 4 or 6 works well — and pick <b>Multi-Point</b> (<span class="kbd">P</span>).</li>
+  <li>Click each root tip per image. Lysa records labelled coordinates per image.</li>
+  <li><b>Export Everything</b> for an Excel summary.</li>
+</ol>
+
+<h4>Calibrate the scale bar</h4>
+<ol>
+  <li>Select <b>Calibrate</b> (<span class="kbd">C</span>).</li>
+  <li>Draw a line on something of known length (e.g. a stage micrometer line, or a feature you've measured before).</li>
+  <li>Enter the real-world length when prompted. Pixel size now propagates to all measurements and the scale bar overlay.</li>
+</ol>
+
+<h4>Apply the same ROI to a series of images</h4>
+<ol>
+  <li>Open all images in the series.</li>
+  <li>Draw the ROI on the first one.</li>
+  <li>In <b>Batch Analysis</b>, click <b>Apply last ROI to all</b>. Stats are computed for each image at the same coordinates.</li>
+</ol>
+
+<h3>Troubleshooting</h3>
+
+<table>
+<tr><th>Symptom</th><th>Likely cause / fix</th></tr>
+<tr><td>Image renders blown-out on first load</td><td>Click <b>Auto</b> on the affected channel(s). If this keeps happening, the image's metadata may be missing percentile stats — re-upload to recompute.</td></tr>
+<tr><td>Tools don't respond to clicks</td><td>Make sure a tool is selected (not pan). The cell border should be cyan with a crosshair cursor over the image. Refresh the browser if it persists.</td></tr>
+<tr><td>500 errors when panning a tiled image</td><td>Backend hasn't finished building the pyramid for that channel. Wait a few seconds and pan again.</td></tr>
+<tr><td><code>uploads/</code> folder is huge</td><td>Lysa caches uploaded files and dedupes by content hash, but each unique file is kept. Manually delete files from <code>uploads/</code> when you're done with a session — Lysa will re-cache on next upload.</td></tr>
+<tr><td>LIF sub-images load slowly</td><td>Use the <b>Merged only</b> or <b>Custom *pattern*</b> option to skip sub-images you don't need. Each sub-image still costs disk and RAM if loaded.</td></tr>
+</table>
+
+<h3>Tools at-a-glance</h3>
+<div class="tool-grid">
+<div><b>H</b> Pan</div>             <div><b>P</b> Multi-Point</div>
+<div><b>R</b> Rectangle ROI</div>   <div><b>L</b> Line Profile</div>
+<div><b>E</b> Ellipse ROI</div>     <div><b>M</b> Distance</div>
+<div><b>G</b> Polygon ROI</div>     <div><b>A</b> Angle</div>
+<div><b>F</b> Freehand</div>        <div><b>C</b> Calibrate</div>
+<div><b>T</b> Text</div>            <div><b>W</b> Arrow</div>
+<div><b>S</b> Scribble</div>        <div><b>⇧ R</b> Ann. Rect</div>
+<div><b>⇧ E</b> Ann. Ellipse</div>  <div>&nbsp;</div>
+</div>
+
+</section>
+
+</body>
+</html>
