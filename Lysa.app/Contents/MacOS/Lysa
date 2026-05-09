@@ -10,10 +10,25 @@ LOG="${TMPDIR:-/tmp}/lysa.log"
 # Resolve the project root (3 levels up from this script).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-cd "$PROJECT_DIR" || {
-    osascript -e 'display alert "Lysa" message "Could not find the Lysa project folder."'
+
+# Sanity check: can we even see the project files?
+# When launched via Finder/Launch Services, macOS may block access to
+# files under ~/Documents, ~/Downloads, ~/Desktop unless the .app has
+# been granted permission.
+if [ ! -r "$PROJECT_DIR/server.py" ]; then
+    osascript <<EOF
+display alert "Lysa" message "Cannot read server.py.
+
+macOS is blocking Lysa from reading files in this folder. Either:
+
+• Open System Settings → Privacy & Security → Files and Folders, find Lysa, and grant access to the folder containing it.
+
+• Or move the Lysa folder out of ~/Documents, ~/Downloads, or ~/Desktop (which are protected by macOS) — for example to ~/Lysa or ~/Apps/Lysa."
+EOF
     exit 1
-}
+fi
+
+cd "$PROJECT_DIR" || exit 1
 
 # Server already running? Just open the browser and exit.
 if curl -s -o /dev/null --max-time 1 "$URL"; then
@@ -21,18 +36,53 @@ if curl -s -o /dev/null --max-time 1 "$URL"; then
     exit 0
 fi
 
-# Pick a Python — prefer python3 (the venv user), fall back to python.
-PY=""
-for cmd in python3 python; do
-    if command -v "$cmd" >/dev/null 2>&1; then PY="$cmd"; break; fi
-done
+# Find a Python that has Lysa's deps installed.
+# Launch Services gives us a minimal PATH (no Homebrew, no Anaconda),
+# so we have to search common install locations directly. Allow
+# LYSA_PYTHON to override (point at a venv's python if needed).
+find_python() {
+    local candidates=()
+    if [ -n "${LYSA_PYTHON:-}" ]; then candidates+=("$LYSA_PYTHON"); fi
+    candidates+=(
+        "$(command -v python3 2>/dev/null)"
+        "$(command -v python  2>/dev/null)"
+        "/opt/homebrew/bin/python3"
+        "/opt/anaconda3/bin/python3"
+        "$HOME/anaconda3/bin/python3"
+        "$HOME/miniconda3/bin/python3"
+        "$HOME/miniforge3/bin/python3"
+        "/usr/local/bin/python3"
+        "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
+    )
+    for c in "${candidates[@]}"; do
+        if [ -n "$c" ] && [ -x "$c" ]; then
+            if "$c" -c "import fastapi, uvicorn, numpy, PIL" >/dev/null 2>&1; then
+                echo "$c"; return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+PY="$(find_python)"
 if [ -z "$PY" ]; then
-    osascript -e 'display alert "Lysa" message "Python 3 was not found.\n\nInstall Python 3 from python.org and run pip install -r requirements.txt in the Lysa folder before launching."'
+    osascript <<EOF
+display alert "Lysa" message "Could not find a Python with Lysa's dependencies installed.
+
+In a terminal, run:
+    cd \"$PROJECT_DIR\"
+    pip install -r requirements.txt
+
+Then double-click Lysa again.
+
+If you use a virtualenv or conda env, set LYSA_PYTHON to its python before launching:
+    launchctl setenv LYSA_PYTHON /path/to/python"
+EOF
     exit 1
 fi
 
-# Start the server in the background. Output goes to a log we can inspect
-# if anything goes wrong.
+# Start the server in the background. Output goes to a log we can
+# inspect if anything goes wrong.
 "$PY" server.py >"$LOG" 2>&1 &
 SERVER_PID=$!
 
@@ -40,7 +90,18 @@ SERVER_PID=$!
 for _ in $(seq 1 30); do
     if curl -s -o /dev/null --max-time 1 "$URL"; then break; fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        osascript -e "display alert \"Lysa\" message \"The server failed to start.\n\nLog: $LOG\""
+        # Server died — show the last few log lines if we can.
+        TAIL="$(tail -8 "$LOG" 2>/dev/null | sed 's/"/\\"/g')"
+        osascript <<EOF
+display alert "Lysa" message "The server crashed during startup.
+
+Python: $PY
+
+Last log lines:
+$TAIL
+
+Full log: $LOG"
+EOF
         exit 1
     fi
     sleep 0.5
