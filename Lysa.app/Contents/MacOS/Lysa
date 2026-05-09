@@ -1,0 +1,55 @@
+#!/bin/bash
+# Lysa launcher — starts the Python server and opens Chrome.
+# This script lives at Lysa.app/Contents/MacOS/Lysa, three levels deep
+# inside the project root that contains server.py.
+
+set -u
+URL="http://localhost:8050"
+LOG="${TMPDIR:-/tmp}/lysa.log"
+
+# Resolve the project root (3 levels up from this script).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+cd "$PROJECT_DIR" || {
+    osascript -e 'display alert "Lysa" message "Could not find the Lysa project folder."'
+    exit 1
+}
+
+# Server already running? Just open the browser and exit.
+if curl -s -o /dev/null --max-time 1 "$URL"; then
+    open -a "Google Chrome" "$URL" 2>/dev/null || open "$URL"
+    exit 0
+fi
+
+# Pick a Python — prefer python3 (the venv user), fall back to python.
+PY=""
+for cmd in python3 python; do
+    if command -v "$cmd" >/dev/null 2>&1; then PY="$cmd"; break; fi
+done
+if [ -z "$PY" ]; then
+    osascript -e 'display alert "Lysa" message "Python 3 was not found.\n\nInstall Python 3 from python.org and run pip install -r requirements.txt in the Lysa folder before launching."'
+    exit 1
+fi
+
+# Start the server in the background. Output goes to a log we can inspect
+# if anything goes wrong.
+"$PY" server.py >"$LOG" 2>&1 &
+SERVER_PID=$!
+
+# Wait up to 15 seconds for the server to start serving.
+for _ in $(seq 1 30); do
+    if curl -s -o /dev/null --max-time 1 "$URL"; then break; fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        osascript -e "display alert \"Lysa\" message \"The server failed to start.\n\nLog: $LOG\""
+        exit 1
+    fi
+    sleep 0.5
+done
+
+# Open Chrome (preferred) or default browser.
+open -a "Google Chrome" "$URL" 2>/dev/null || open "$URL"
+
+# Stay alive while the server runs so the Lysa icon stays in the Dock and
+# Cmd+Q (or right-click → Quit) cleanly terminates the server.
+trap 'kill "$SERVER_PID" 2>/dev/null; exit 0' SIGTERM SIGINT
+wait "$SERVER_PID"

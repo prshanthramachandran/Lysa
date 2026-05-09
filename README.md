@@ -23,12 +23,18 @@ cd Lysa
 
 # 2. Install dependencies
 pip install -r requirements.txt
-
-# 3. Run
-python server.py
 ```
 
-Then open http://localhost:8050 in **Chrome** (recommended). The first launch creates an `uploads/` folder for cached image files (gitignored).
+Then either:
+
+- **macOS — double-click `Lysa.app`** in Finder. The first launch shows a Privacy dialog ("Lysa would like to access files in your Documents folder") — click **Allow** once and the server starts and Chrome opens automatically. Drag `Lysa.app` to your Dock for one-click access afterward.
+- **Any platform — run from terminal**:
+  ```bash
+  python server.py
+  ```
+  Then open http://localhost:8050 in **Chrome** (recommended).
+
+The first launch creates an `uploads/` folder for cached image files (gitignored).
 
 For installation, the interface walkthrough, and a tools cheatsheet, see [docs/Lysa-Manual.pdf](docs/Lysa-Manual.pdf).
 
