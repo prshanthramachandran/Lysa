@@ -2267,8 +2267,11 @@ function _initialContrastWindow(img) {
     // Prefer 1/99-percentile defaults so freshly-loaded images don't blow
     // out — matches the thumbnail's auto-contrast look. metadata's
     // percentile_1/percentile_99 are computed at ingest in image_processing.
+    // Skip for 8-bit RGB (natural photos): they already use the full 0..255
+    // range, so auto-contrast just crushes shadows. Match Root Measure here.
     const md = img && img.metadata;
-    if (md && Number.isFinite(md.percentile_1) && Number.isFinite(md.percentile_99) && md.percentile_99 > md.percentile_1) {
+    const isNaturalRGB = md && (md.mode === 'RGB' || md.mode === 'RGBA') && (md.bit_depth || 8) === 8;
+    if (!isNaturalRGB && md && Number.isFinite(md.percentile_1) && Number.isFinite(md.percentile_99) && md.percentile_99 > md.percentile_1) {
         return [Math.round(md.percentile_1), Math.round(md.percentile_99)];
     }
     if (img && img.rawData && Number.isFinite(img.rawData.dataMax)) {
@@ -2351,10 +2354,17 @@ const _DEFAULT_CHANNEL_COLORS_RGB = ['red_lut', 'green_lut', 'blue_lut'];
 
 function _defaultChannels(metadata) {
     const n = (metadata && metadata.channels) || 1;
-    // Prefer 1/99-percentile defaults to avoid blown-out first-load. These
-    // are global-across-channels (computed at ingest in image_processing);
-    // tiled mode refines to per-channel percentiles in createTiledViewer.
-    const hasPct = metadata && Number.isFinite(metadata.percentile_1)
+    const mode = (metadata && metadata.mode) || '';
+    const bitDepth = (metadata && metadata.bit_depth) || 8;
+    const isRGB = (mode === 'RGB' || mode === 'RGBA') && n >= 2;
+    // Natural-light photographs (8-bit RGB) are already calibrated to use the
+    // full 0..255 range — auto-contrast crushes shadows for no benefit. Match
+    // Root Measure / Preview / any normal photo viewer: render as-is.
+    // Auto-contrast remains on for 16-bit, fluorescence, and grayscale data
+    // where the signal often occupies only a small fraction of the dtype range.
+    const isNaturalRGB = isRGB && bitDepth === 8;
+    const hasPct = !isNaturalRGB
+        && metadata && Number.isFinite(metadata.percentile_1)
         && Number.isFinite(metadata.percentile_99)
         && metadata.percentile_99 > metadata.percentile_1;
     const dataMax = hasPct
@@ -2363,8 +2373,6 @@ function _defaultChannels(metadata) {
     const dataMin = hasPct
         ? metadata.percentile_1
         : ((metadata && Number.isFinite(metadata.min_value)) ? metadata.min_value : 0);
-    const mode = (metadata && metadata.mode) || '';
-    const isRGB = (mode === 'RGB' || mode === 'RGBA') && n >= 2;
     const palette = isRGB ? _DEFAULT_CHANNEL_COLORS_RGB : _DEFAULT_CHANNEL_COLORS;
     const labels = isRGB ? ['Red', 'Green', 'Blue'] : null;
     const out = [];
@@ -5057,7 +5065,11 @@ async function createTiledViewer(cell, imageId) {
     // native units — matches the legacy thumbnail's auto-contrast look so
     // freshly-loaded images don't render blown-out. Run once per session
     // (tracked by a flag); the user can still tweak the sliders afterwards.
-    if (img && img.channels && !img._initialContrastApplied) {
+    // Skip for 8-bit RGB photographs: they already use full 0..255 and
+    // auto-contrast just crushes shadows (matches Root Measure's behavior).
+    const _md = img && img.metadata;
+    const _isNaturalRGB = _md && (_md.mode === 'RGB' || _md.mode === 'RGBA') && (_md.bit_depth || 8) === 8;
+    if (!_isNaturalRGB && img && img.channels && !img._initialContrastApplied) {
         let changed = false;
         for (let i = 0; i < img.channels.length && i < infos.length; i++) {
             const p1 = dataP1s[i], p99 = dataP99s[i];

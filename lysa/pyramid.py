@@ -148,18 +148,19 @@ def _channel_to_uint8(arr: np.ndarray, channel_idx: int) -> Tuple[np.ndarray, fl
 
 
 def _downsample_2x_gray(arr: np.ndarray) -> np.ndarray:
-    """2x box-filter downsample for a 2-D uint8 array. Crops odd dims."""
+    """2x LANCZOS downsample for a 2-D uint8 array.
+
+    LANCZOS preserves edge sharpness much better than the simple 2×2 box
+    average we used to do — after 10+ cascaded downsamples (which is
+    what you see at fit-zoom for a 36 MP image) the difference is
+    dramatic. Matches the resampling Root Measure uses for display.
+    """
     h, w = arr.shape
-    h2 = (h // 2) * 2
-    w2 = (w // 2) * 2
-    a = arr[:h2, :w2]
-    out = (
-        a[0::2, 0::2].astype(np.uint16)
-        + a[0::2, 1::2].astype(np.uint16)
-        + a[1::2, 0::2].astype(np.uint16)
-        + a[1::2, 1::2].astype(np.uint16)
-    ) // 4
-    return out.astype(np.uint8)
+    if h < 2 or w < 2:
+        return arr
+    pil = Image.fromarray(arr, mode="L")
+    out = pil.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
+    return np.asarray(out, dtype=np.uint8)
 
 
 def _build_channel_levels(image_id: str, channel_idx: int) -> Dict[int, np.ndarray]:
@@ -275,19 +276,19 @@ def get_channel_tile_png(
 
 
 def _downsample_2x(arr: np.ndarray) -> np.ndarray:
-    """Fast 2x box-filter downsample for uint8 RGB. Crops odd dims."""
+    """2x LANCZOS downsample for uint8 RGB.
+
+    Matches Root Measure's display resampling — preserves edge sharpness
+    through many cascaded downsamples. Costs ~5× more than box-filter
+    averaging (~3-5s vs 0.5s for a full 36 MP pyramid build), but the
+    visual difference at fit-zoom is dramatic.
+    """
     h, w = arr.shape[:2]
-    h2 = (h // 2) * 2
-    w2 = (w // 2) * 2
-    a = arr[:h2, :w2]
-    # Average 2x2 blocks, stay in uint16 to avoid overflow, then back to uint8
-    out = (
-        a[0::2, 0::2].astype(np.uint16)
-        + a[0::2, 1::2].astype(np.uint16)
-        + a[1::2, 0::2].astype(np.uint16)
-        + a[1::2, 1::2].astype(np.uint16)
-    ) // 4
-    return out.astype(np.uint8)
+    if h < 2 or w < 2:
+        return arr
+    pil = Image.fromarray(arr)
+    out = pil.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
+    return np.asarray(out, dtype=np.uint8)
 
 
 def _build_all_levels(image_id: str) -> Dict[int, np.ndarray]:
