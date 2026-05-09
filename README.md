@@ -44,6 +44,26 @@ For installation, the interface walkthrough, and a tools cheatsheet, see [docs/L
 - **Chrome** (recommended — the only browser Lysa is actively tested in). Firefox, Safari, and Edge should work since Lysa uses standard WebGL2, but they aren't extensively validated.
 - ~2× your largest LIF file's size in free disk space (uploads are content-addressed and dedup, but you still need room for the originals)
 
+## Troubleshooting
+
+**Double-clicking `Lysa.app` does nothing on macOS.** Some clone or extraction methods (`git clone` over an unusual protocol, unzipping a downloaded archive, copying the folder via certain file managers) can drop the executable bit on the launcher script. Fix:
+
+```bash
+chmod +x Lysa.app/Contents/MacOS/Lysa
+```
+
+Then double-click again. If the bundle still won't launch, run the script directly to see the error:
+
+```bash
+./Lysa.app/Contents/MacOS/Lysa
+```
+
+**`numpy.dtype size changed` error on startup.** Some `scikit-image` versions were built against numpy 1.x and break under numpy 2.x. Upgrade in place:
+
+```bash
+pip install --upgrade scikit-image
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
