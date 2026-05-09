@@ -331,7 +331,13 @@
             position: relative; overflow: auto; background: #111;
             display: flex; align-items: center; justify-content: center;
         }
-        .grid-cell canvas { max-width: 100%; max-height: 100%; image-rendering: pixelated; transition: transform 0.05s ease-out; }
+        /* Default: smooth (bilinear/bicubic) scaling — right for photographs
+           and zoomed-out fluorescence views. The .crisp-pixels class can be
+           added when the user explicitly wants to see individual pixel
+           values at high zoom (e.g. inspecting microscopy data near native
+           resolution). */
+        .grid-cell canvas { max-width: 100%; max-height: 100%; image-rendering: auto; transition: transform 0.05s ease-out; }
+        .grid-cell.crisp-pixels canvas { image-rendering: pixelated; }
         .grid-cell.zoomed { align-items: flex-start; justify-content: flex-start; }
         .grid-cell.zoomed canvas { max-width: none; max-height: none; }
         .grid-cell::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -5154,7 +5160,11 @@ async function createTiledViewer(cell, imageId) {
             gestureSettingsMouse: isPrimary
                 ? { clickToZoom: false, dblClickToZoom: false }
                 : { clickToZoom: false, dblClickToZoom: false, scrollToZoom: false, dragToPan: false },
-            imageSmoothingEnabled: false,
+            // Smooth (bilinear) interpolation when zoomed past native res.
+            // Was false originally to "see actual pixels" for microscopy, but
+            // for natural photos (and even fluorescence at high zoom) this
+            // produced the blocky NEAREST upscaling the user saw.
+            imageSmoothingEnabled: true,
             mouseNavEnabled: !!isPrimary,
         });
         return { viewer: v, container: cont };
