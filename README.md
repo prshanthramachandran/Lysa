@@ -25,16 +25,18 @@ cd Lysa
 pip install -r requirements.txt
 ```
 
-Then either:
+Then launch — pick what fits your setup:
 
-- **macOS — double-click `Lysa.app`** in Finder. The first launch shows a Privacy dialog ("Lysa would like to access files in your Documents folder") — click **Allow** once and the server starts and Chrome opens automatically. Drag `Lysa.app` to your Dock for one-click access afterward.
-- **Any platform — run from terminal**:
-  ```bash
-  python server.py
-  ```
-  Then open http://localhost:8050 in **Chrome** (recommended).
+| Option | OS | Terminal? | Notes |
+|---|---|---|---|
+| Double-click **`Lysa.app`** | macOS | hidden | Looks like a regular app. Drag to your Dock for one-click access. |
+| Double-click **`Start Lysa.command`** | macOS | visible | Opens Terminal so you can see server logs (handy for debugging). |
+| Double-click **`Start Lysa.bat`** | Windows | visible | Opens Command Prompt, starts the server, opens default browser. |
+| `python server.py` | any | visible | Manual terminal launch. |
 
-The first launch creates an `uploads/` folder for cached image files (gitignored).
+The browser opens to `http://localhost:8050`. The first launch creates an `uploads/` folder for cached image files (gitignored).
+
+**macOS heads-up:** Apple's Privacy framework blocks unsigned `.app` bundles from reading files in `~/Documents`, `~/Downloads`, and `~/Desktop`. If you put Lysa in one of those folders, `Lysa.app` will show an alert telling you to either move the project elsewhere (e.g. `~/Lysa`) or grant access in **System Settings → Privacy & Security → Files and Folders**. The `.command` file and `python server.py` aren't affected — they inherit your terminal's permissions.
 
 For installation, the interface walkthrough, and a tools cheatsheet, see [docs/Lysa-Manual.pdf](docs/Lysa-Manual.pdf).
 

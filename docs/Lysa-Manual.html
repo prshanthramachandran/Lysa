@@ -204,11 +204,24 @@ cd Lysa
 pip install -r requirements.txt</code></pre>
 
 <h3>Running</h3>
-<pre><code>python server.py</code></pre>
 
-<p>Then open <code>http://localhost:8050</code>. The terminal will show <code>Application startup complete</code> when it's ready.</p>
+<p>There are four ways to start Lysa — pick whichever fits:</p>
 
-<p>To stop the server: <span class="kbd">Ctrl</span> + <span class="kbd">C</span> in the terminal.</p>
+<table>
+<tr><th>Option</th><th>OS</th><th>Terminal?</th><th>Notes</th></tr>
+<tr><td>Double-click <code>Lysa.app</code></td><td>macOS</td><td>hidden</td><td>Looks like a regular app. Drag to the Dock for one-click access afterward.</td></tr>
+<tr><td>Double-click <code>Start Lysa.command</code></td><td>macOS</td><td>visible</td><td>Opens Terminal so you can see server logs (useful for debugging).</td></tr>
+<tr><td>Double-click <code>Start Lysa.bat</code></td><td>Windows</td><td>visible</td><td>Opens Command Prompt, starts the server, launches your default browser.</td></tr>
+<tr><td><code>python server.py</code></td><td>any</td><td>visible</td><td>Manual terminal launch. The original way.</td></tr>
+</table>
+
+<p>The browser opens to <code>http://localhost:8050</code>. The terminal (when one is visible) shows <code>Application startup complete</code> when the server is ready.</p>
+
+<p>To stop the server: <span class="kbd">Ctrl</span> + <span class="kbd">C</span> in the terminal, or quit <code>Lysa.app</code> from the Dock (right-click → Quit).</p>
+
+<div class="callout">
+<strong>macOS heads-up.</strong> Unsigned <code>.app</code> bundles can't read files in <code>~/Documents</code>, <code>~/Downloads</code>, or <code>~/Desktop</code> by default — that's Apple's Privacy framework. If <code>Lysa.app</code> shows an alert about not being able to read <code>server.py</code>, either move the Lysa folder out of those protected directories (e.g. to <code>~/Lysa</code>) or grant the app permission in <b>System Settings → Privacy &amp; Security → Files and Folders</b>. The <code>.command</code> file and <code>python server.py</code> aren't affected — they inherit your terminal's permissions.
+</div>
 
 <div class="callout">
 <strong>Tip.</strong> Lysa uses uvicorn's auto-reload, so editing the source code while the server is running will pick up the changes automatically — handy if you're customizing it.
