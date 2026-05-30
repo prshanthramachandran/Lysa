@@ -1,80 +1,97 @@
 #!/bin/bash
 # Lysa Desktop.app launcher — opens Lysa in a NATIVE desktop window (pywebview).
 #
-# Lightweight wrapper: runs desktop.py from source (no freezing), so code
-# changes are picked up on next launch — ideal while actively developing.
+# Lightweight source wrapper: runs desktop.py from the project (no freezing),
+# so code changes are picked up on next launch — ideal during development.
 #
 # Bundle layout:  <project>/Lysa Desktop.app/Contents/MacOS/Lysa Desktop
 # so the project root is three directories up from this script.
-#
-# Finder-launched apps do NOT inherit your shell PATH, so we can't assume
-# `python3` is the interpreter that has pywebview installed. We therefore
-# probe a list of candidate interpreters and pick the first one that can
-# actually import the deps the desktop app needs (fastapi + uvicorn + webview).
 
 LOG="/tmp/lysa-desktop.log"
 exec > "$LOG" 2>&1   # GUI apps have no visible stdout — capture everything here
 echo "=== Lysa Desktop launch $(date) ==="
 
+alert()  { osascript -e "display alert \"Lysa Desktop\" message \"$1\"" >/dev/null 2>&1; }
+notify() { osascript -e "display notification \"$1\" with title \"Lysa\"" >/dev/null 2>&1; }
+
 # --- Resolve project root ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 echo "Project dir: $PROJECT_DIR"
-cd "$PROJECT_DIR" || {
-    osascript -e 'display alert "Lysa Desktop" message "Could not locate the project folder."'
-    exit 1
-}
 
-if [ ! -f "desktop.py" ]; then
-    osascript -e 'display alert "Lysa Desktop" message "desktop.py not found next to this app. Keep Lysa Desktop.app inside the project folder."'
+# --- TCC / privacy gate -----------------------------------------------------
+# Finder-launched unsigned apps are blocked from reading ~/Documents,
+# ~/Downloads, ~/Desktop unless granted Full Disk Access. Detect that with a
+# REAL read (not just `[ -f ]`, which can pass even when reads are denied).
+if ! head -c 1 "$PROJECT_DIR/desktop.py" >/dev/null 2>&1; then
+    echo "TCC read test failed for $PROJECT_DIR/desktop.py"
+    osascript >/dev/null 2>&1 <<'OSA'
+display alert "Lysa Desktop — permission needed" message "macOS is blocking Lysa Desktop from reading its project folder (this happens for apps inside ~/Documents, ~/Downloads, or ~/Desktop).
+
+To fix, grant Full Disk Access:
+
+1. Open System Settings → Privacy & Security → Full Disk Access.
+2. Click +, then add \"Lysa Desktop\" (this app).
+3. Make sure its switch is ON.
+4. Double-click Lysa Desktop again.
+
+The Privacy settings pane will open when you click OK." buttons {"OK"} default button "OK"
+OSA
+    # Jump straight to the relevant settings pane.
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null
     exit 1
 fi
 
-alert() { osascript -e "display alert \"Lysa Desktop\" message \"$1\""; }
-notify() { osascript -e "display notification \"$1\" with title \"Lysa\""; }
+cd "$PROJECT_DIR" || { alert "Could not enter the project folder."; exit 1; }
 
-# --- Build candidate interpreter list ---
-# Order: project venv, then PATH python3, then common Homebrew / Anaconda /
-# system locations (covering the case where Lysa was set up under conda).
+if [ ! -f "desktop.py" ]; then
+    alert "desktop.py not found next to this app. Keep Lysa Desktop.app inside the project folder."
+    exit 1
+fi
+
+# --- Pick a Python interpreter ----------------------------------------------
+# Probe each candidate from a NON-protected cwd (/tmp) so a fully-capable
+# interpreter is never falsely rejected by an os.getcwd() permission error.
 CANDIDATES=(
     "$PROJECT_DIR/.venv/bin/python"
     "$(command -v python3 2>/dev/null)"
+    "/opt/anaconda3/bin/python3"
     "$HOME/anaconda3/bin/python3"
     "$HOME/miniconda3/bin/python3"
     "$HOME/miniforge3/bin/python3"
-    "/opt/anaconda3/bin/python3"
     "/opt/homebrew/bin/python3"
     "/usr/local/bin/python3"
     "/usr/bin/python3"
 )
 
-has_core()   { "$1" -c "import fastapi, uvicorn" >/dev/null 2>&1; }
-has_webview(){ "$1" -c "import webview" >/dev/null 2>&1; }
+probe() {  # probe <python> <import-list>  -> 0 if importable
+    ( cd /tmp && "$1" -c "import $2" ) >/dev/null 2>&1
+}
 
-# First choice: an interpreter that already has BOTH core deps and webview.
 PYTHON=""
+# Pass 1: an interpreter that already has BOTH core deps and webview.
 for c in "${CANDIDATES[@]}"; do
     [ -n "$c" ] && [ -x "$c" ] || continue
-    if has_core "$c" && has_webview "$c"; then
-        PYTHON="$c"; echo "Using (full deps): $PYTHON"; break
+    if probe "$c" "fastapi, uvicorn" && probe "$c" "webview"; then
+        PYTHON="$c"; echo "Selected (full deps): $PYTHON"; break
     fi
 done
-
-# Second choice: an interpreter with core deps; we'll add webview to it.
+# Pass 2: an interpreter with core deps; add webview to it.
 if [ -z "$PYTHON" ]; then
     for c in "${CANDIDATES[@]}"; do
         [ -n "$c" ] && [ -x "$c" ] || continue
-        if has_core "$c"; then
-            PYTHON="$c"; echo "Using (core deps, will add webview): $PYTHON"; break
+        if probe "$c" "fastapi, uvicorn"; then
+            PYTHON="$c"; echo "Selected (core, will add webview): $PYTHON"; break
         fi
     done
 fi
-
-# Last resort: first existing python3; we'll install everything.
+# Pass 3: first usable python; install everything.
 if [ -z "$PYTHON" ]; then
     for c in "${CANDIDATES[@]}"; do
         [ -n "$c" ] && [ -x "$c" ] || continue
-        PYTHON="$c"; echo "Using (fresh, will install all): $PYTHON"; break
+        if ( cd /tmp && "$c" -c "pass" ) >/dev/null 2>&1; then
+            PYTHON="$c"; echo "Selected (fresh, will install all): $PYTHON"; break
+        fi
     done
 fi
 
@@ -83,26 +100,26 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
-# --- Ensure dependencies ---
-if ! has_core "$PYTHON"; then
+# --- Ensure dependencies (only if missing) ----------------------------------
+if ! probe "$PYTHON" "fastapi, uvicorn"; then
     notify "Installing dependencies (first run)…"
     "$PYTHON" -m pip install -r requirements.txt --quiet \
         || "$PYTHON" -m pip install -r requirements.txt --quiet --break-system-packages
 fi
-if ! has_webview "$PYTHON"; then
+if ! probe "$PYTHON" "webview"; then
     notify "Installing desktop window support…"
     "$PYTHON" -m pip install -r requirements-desktop.txt --quiet \
         || "$PYTHON" -m pip install -r requirements-desktop.txt --quiet --break-system-packages
 fi
 
-# Final guard — if webview still isn't importable, fall back to the browser
-# build rather than dying silently.
-if ! has_webview "$PYTHON"; then
-    alert "Could not install the desktop window component (pywebview). Falling back to the browser version."
+# If webview still won't load, fall back to the browser build rather than fail.
+if ! probe "$PYTHON" "webview"; then
+    echo "webview unavailable after install attempt — browser fallback"
+    alert "Could not load the desktop window component (pywebview); opening the browser version instead. See $LOG for details."
     ( sleep 2.5 && open "http://localhost:8050" ) &
     exec "$PYTHON" server.py
 fi
 
-echo "Launching desktop window with: $PYTHON desktop.py"
+echo "Launching desktop window: $PYTHON desktop.py"
 notify "Starting Lysa…"
 exec "$PYTHON" desktop.py
