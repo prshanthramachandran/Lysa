@@ -2,8 +2,7 @@
 Version / update-check route.
 
 Exposes GET /api/version which reports the running version and, when
-possible, whether a newer GitHub Release exists. Designed to be safe at
-startup:
+possible, whether a newer GitHub tag exists. Designed to be safe at startup:
 
   - Fail-silent: any network/parse error leaves update_available = False and
     never raises. The app must start normally offline.
@@ -11,6 +10,10 @@ startup:
     in-process. The frontend calls this asynchronously after load, so even
     the first (uncached) call never blocks startup.
   - Opt-out: set LYSA_DISABLE_UPDATE_CHECK=1 to skip the network entirely.
+
+Update source: the repo's git **tags** (not Releases). We fetch the tag list
+and pick the highest semantic version, so a new version is advertised the
+moment you `git push --tags` — no separate GitHub Release needed.
 
 The only network egress is a single GET to the public GitHub API, which
 necessarily exposes the client IP to GitHub — documented for transparency.
@@ -29,7 +32,9 @@ from .. import __version__
 router = APIRouter(prefix="/api", tags=["version"])
 
 GITHUB_REPO = "prshanthramachandran/Lysa"
-RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+TAGS_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags?per_page=100"
+# Web page for a given tag — always exists for a real tag (unlike a Release).
+TAG_PAGE = f"https://github.com/{GITHUB_REPO}/releases/tag/{{tag}}"
 CACHE_TTL = 24 * 3600          # seconds
 FETCH_TIMEOUT = 3.0            # seconds — keep startup snappy
 
@@ -69,10 +74,15 @@ def _is_newer(latest: str, current: str) -> bool:
     return a > b
 
 
-def _fetch_latest_release() -> dict:
-    """Fetch the latest GitHub Release. Raises on any failure (caller guards)."""
+def _fetch_latest_tag() -> dict:
+    """Fetch repo tags and return the highest semantic version.
+
+    Returns {tag, url, name}. Raises on network/parse failure (caller guards).
+    GitHub's tag order is not guaranteed to be by version, so we compare all
+    tag names ourselves and pick the maximum.
+    """
     req = urllib.request.Request(
-        RELEASES_URL,
+        TAGS_URL,
         headers={
             "User-Agent": "Lysa-update-check",
             "Accept": "application/vnd.github+json",
@@ -80,11 +90,23 @@ def _fetch_latest_release() -> dict:
     )
     with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
-    return {
-        "tag": payload.get("tag_name"),
-        "url": payload.get("html_url"),
-        "name": payload.get("name"),
-    }
+
+    best = None
+    best_key = None
+    for entry in payload:
+        name = entry.get("name")
+        if not name:
+            continue
+        key = _parse_version(name)
+        if not key:
+            continue
+        if best_key is None or key > best_key:
+            best_key = key
+            best = name
+
+    if best is None:
+        return {"tag": None, "url": None, "name": None}
+    return {"tag": best, "url": TAG_PAGE.format(tag=best), "name": best}
 
 
 @router.get("/version")
@@ -117,11 +139,11 @@ def get_version():
     info = _cache["data"]
     if info is None or (now - _cache["ts"]) >= CACHE_TTL:
         try:
-            info = _fetch_latest_release()
+            info = _fetch_latest_tag()
             _cache["data"] = info
             _cache["ts"] = now
         except Exception:
-            pass  # offline / 404 (no releases yet) / parse error → stay silent
+            pass  # offline / no tags / parse error → stay silent
 
     if info and info.get("tag"):
         result["checked"] = True

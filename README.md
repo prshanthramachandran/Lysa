@@ -32,13 +32,59 @@ Then launch — pick what fits your setup:
 | Double-click **`Lysa.app`** | macOS | hidden | Looks like a regular app. Drag to your Dock for one-click access. |
 | Double-click **`Start Lysa.command`** | macOS | visible | Opens Terminal so you can see server logs (handy for debugging). |
 | Double-click **`Start Lysa.bat`** | Windows | visible | Opens Command Prompt, starts the server, opens default browser. |
-| `python server.py` | any | visible | Manual terminal launch. |
+| Double-click **`Start Lysa Desktop.command`** | macOS | visible | Runs Lysa in a **native desktop window** instead of a browser tab (see below). |
+| `python server.py` | any | visible | Manual terminal launch (browser). |
+| `python desktop.py` | any | visible | Native desktop window (browser not required). |
 
 The browser opens to `http://localhost:8050`. The first launch creates an `uploads/` folder for cached image files (gitignored).
 
 **macOS heads-up:** Apple's Privacy framework blocks unsigned `.app` bundles from reading files in `~/Documents`, `~/Downloads`, and `~/Desktop`. If you put Lysa in one of those folders, `Lysa.app` will show an alert telling you to either move the project elsewhere (e.g. `~/Lysa`) or grant access in **System Settings → Privacy & Security → Files and Folders**. The `.command` file and `python server.py` aren't affected — they inherit your terminal's permissions.
 
 For installation, the interface walkthrough, and a tools cheatsheet, see [docs/Lysa-Manual.pdf](docs/Lysa-Manual.pdf).
+
+## Desktop app
+
+Lysa can run in a **native desktop window** instead of a browser tab, while
+keeping the full feature set (tile viewer, per-channel pyramids, LIF,
+analysis). It starts the same local server and shows it in the OS's built-in
+webview via [pywebview](https://pywebview.flowdev.org/) — no bundled browser.
+
+```bash
+pip install -r requirements.txt -r requirements-desktop.txt
+python desktop.py        # or double-click "Start Lysa Desktop.command" on macOS
+```
+
+macOS uses WebKit, Windows uses WebView2, Linux uses GTK/WebKit2. To ship a
+double-clickable `.app` / `.exe`, bundle `desktop.py` with PyInstaller or
+cx_Freeze (include the `static/` and `lysa/` trees).
+
+## Update notifications
+
+On launch, Lysa checks GitHub for a newer version and, if one exists, shows a
+dismissable banner linking to it. It compares the running `lysa.__version__`
+against the repository's highest **git tag**.
+
+The check is deliberately unobtrusive:
+
+- **Non-blocking & fail-silent** — runs after the UI loads, on a 3-second
+  timeout; offline or API errors are ignored and never delay startup.
+- **Cached** — queried at most once per 24 h (server-side); a dismissed
+  version is remembered client-side so it won't re-nag.
+- **Opt-out** — set the environment variable `LYSA_DISABLE_UPDATE_CHECK=1`
+  to disable the network check entirely.
+- **Privacy** — it's a single request to `api.github.com`, which necessarily
+  exposes the client's IP to GitHub. Nothing else is sent.
+
+### Releasing a new version
+
+1. Bump `__version__` in [`lysa/__init__.py`](lysa/__init__.py).
+2. Commit, then tag and push:
+   ```bash
+   git tag v3.1.0
+   git push && git push --tags
+   ```
+   Use `vMAJOR.MINOR.PATCH`. Pushing the tag is enough for users' update
+   banners to fire — no separate GitHub *Release* is required.
 
 ## Requirements
 

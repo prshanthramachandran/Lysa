@@ -1,0 +1,10 @@
+# Desktop build extras — install ON TOP of requirements.txt to run Lysa as a
+# native desktop window:
+#     pip install -r requirements.txt -r requirements-desktop.txt
+#     python desktop.py
+#
+# pywebview uses the OS's built-in webview (no bundled browser):
+#   macOS   -> WebKit (built in)
+#   Windows -> WebView2 (ships with Windows 11; installable on 10)
+#   Linux   -> GTK + WebKit2 (may need system packages: see pywebview docs)
+pywebview>=5.0
