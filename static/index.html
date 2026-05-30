@@ -673,6 +673,43 @@
 </head>
 <body>
 
+<!-- Update-available banner (hidden until /api/version reports a newer release) -->
+<div id="lysa-update-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:99999; background:#1f6feb; color:#fff; padding:8px 16px; font:13px -apple-system,Segoe UI,sans-serif; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,.35);">
+    <span id="lysa-update-text"></span>
+    <a id="lysa-update-link" href="#" target="_blank" rel="noopener" style="color:#fff; text-decoration:underline; margin-left:8px;">View release</a>
+    <span id="lysa-update-dismiss" title="Dismiss" style="cursor:pointer; margin-left:16px; font-weight:bold; opacity:.85;">&#10005;</span>
+</div>
+<script>
+// Startup update check — non-blocking, fail-silent, self-contained.
+(function () {
+    function showBanner(d) {
+        try { if (localStorage.getItem('lysaDismissedUpdate') === d.latest) return; } catch (e) {}
+        var banner = document.getElementById('lysa-update-banner');
+        var text = document.getElementById('lysa-update-text');
+        var link = document.getElementById('lysa-update-link');
+        var dismiss = document.getElementById('lysa-update-dismiss');
+        if (!banner || !text) return;
+        text.textContent = 'Lysa ' + d.latest + ' is available (you have ' + d.current + ').';
+        if (d.release_url) { link.href = d.release_url; link.style.display = ''; }
+        else { link.style.display = 'none'; }
+        banner.style.display = 'block';
+        dismiss.onclick = function () {
+            banner.style.display = 'none';
+            try { localStorage.setItem('lysaDismissedUpdate', d.latest); } catch (e) {}
+        };
+    }
+    function checkForUpdate() {
+        fetch('/api/version')
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d && d.update_available && d.latest) showBanner(d); })
+            .catch(function () {});
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', checkForUpdate);
+    } else { checkForUpdate(); }
+})();
+</script>
+
 <!-- Top Bar -->
 <div class="topbar">
     <div class="topbar-logo">

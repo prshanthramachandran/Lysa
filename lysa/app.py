@@ -19,6 +19,7 @@ from .routes.filters import router as filters_router
 from .routes.root_growth import router as root_growth_router
 from .routes.tiles import router as tiles_router
 from .routes.sessions import router as sessions_router
+from .routes.version import router as version_router
 
 
 def create_app() -> FastAPI:
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(root_growth_router)
     app.include_router(tiles_router)
     app.include_router(sessions_router)
+    app.include_router(version_router)
     app.include_router(viewer_router)       # /view/{id} — no /api prefix
 
     # --- Frontend ---
