@@ -1,0 +1,108 @@
+#!/bin/bash
+# Lysa Desktop.app launcher — opens Lysa in a NATIVE desktop window (pywebview).
+#
+# Lightweight wrapper: runs desktop.py from source (no freezing), so code
+# changes are picked up on next launch — ideal while actively developing.
+#
+# Bundle layout:  <project>/Lysa Desktop.app/Contents/MacOS/Lysa Desktop
+# so the project root is three directories up from this script.
+#
+# Finder-launched apps do NOT inherit your shell PATH, so we can't assume
+# `python3` is the interpreter that has pywebview installed. We therefore
+# probe a list of candidate interpreters and pick the first one that can
+# actually import the deps the desktop app needs (fastapi + uvicorn + webview).
+
+LOG="/tmp/lysa-desktop.log"
+exec > "$LOG" 2>&1   # GUI apps have no visible stdout — capture everything here
+echo "=== Lysa Desktop launch $(date) ==="
+
+# --- Resolve project root ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+echo "Project dir: $PROJECT_DIR"
+cd "$PROJECT_DIR" || {
+    osascript -e 'display alert "Lysa Desktop" message "Could not locate the project folder."'
+    exit 1
+}
+
+if [ ! -f "desktop.py" ]; then
+    osascript -e 'display alert "Lysa Desktop" message "desktop.py not found next to this app. Keep Lysa Desktop.app inside the project folder."'
+    exit 1
+fi
+
+alert() { osascript -e "display alert \"Lysa Desktop\" message \"$1\""; }
+notify() { osascript -e "display notification \"$1\" with title \"Lysa\""; }
+
+# --- Build candidate interpreter list ---
+# Order: project venv, then PATH python3, then common Homebrew / Anaconda /
+# system locations (covering the case where Lysa was set up under conda).
+CANDIDATES=(
+    "$PROJECT_DIR/.venv/bin/python"
+    "$(command -v python3 2>/dev/null)"
+    "$HOME/anaconda3/bin/python3"
+    "$HOME/miniconda3/bin/python3"
+    "$HOME/miniforge3/bin/python3"
+    "/opt/anaconda3/bin/python3"
+    "/opt/homebrew/bin/python3"
+    "/usr/local/bin/python3"
+    "/usr/bin/python3"
+)
+
+has_core()   { "$1" -c "import fastapi, uvicorn" >/dev/null 2>&1; }
+has_webview(){ "$1" -c "import webview" >/dev/null 2>&1; }
+
+# First choice: an interpreter that already has BOTH core deps and webview.
+PYTHON=""
+for c in "${CANDIDATES[@]}"; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    if has_core "$c" && has_webview "$c"; then
+        PYTHON="$c"; echo "Using (full deps): $PYTHON"; break
+    fi
+done
+
+# Second choice: an interpreter with core deps; we'll add webview to it.
+if [ -z "$PYTHON" ]; then
+    for c in "${CANDIDATES[@]}"; do
+        [ -n "$c" ] && [ -x "$c" ] || continue
+        if has_core "$c"; then
+            PYTHON="$c"; echo "Using (core deps, will add webview): $PYTHON"; break
+        fi
+    done
+fi
+
+# Last resort: first existing python3; we'll install everything.
+if [ -z "$PYTHON" ]; then
+    for c in "${CANDIDATES[@]}"; do
+        [ -n "$c" ] && [ -x "$c" ] || continue
+        PYTHON="$c"; echo "Using (fresh, will install all): $PYTHON"; break
+    done
+fi
+
+if [ -z "$PYTHON" ]; then
+    alert "Python 3 not found. Install it from python.org or via Homebrew (brew install python3), then try again."
+    exit 1
+fi
+
+# --- Ensure dependencies ---
+if ! has_core "$PYTHON"; then
+    notify "Installing dependencies (first run)…"
+    "$PYTHON" -m pip install -r requirements.txt --quiet \
+        || "$PYTHON" -m pip install -r requirements.txt --quiet --break-system-packages
+fi
+if ! has_webview "$PYTHON"; then
+    notify "Installing desktop window support…"
+    "$PYTHON" -m pip install -r requirements-desktop.txt --quiet \
+        || "$PYTHON" -m pip install -r requirements-desktop.txt --quiet --break-system-packages
+fi
+
+# Final guard — if webview still isn't importable, fall back to the browser
+# build rather than dying silently.
+if ! has_webview "$PYTHON"; then
+    alert "Could not install the desktop window component (pywebview). Falling back to the browser version."
+    ( sleep 2.5 && open "http://localhost:8050" ) &
+    exec "$PYTHON" server.py
+fi
+
+echo "Launching desktop window with: $PYTHON desktop.py"
+notify "Starting Lysa…"
+exec "$PYTHON" desktop.py

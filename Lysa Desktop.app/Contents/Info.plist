@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Lysa Desktop</string>
+    <key>CFBundleDisplayName</key>
+    <string>Lysa Desktop</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.lysa.desktop</string>
+    <key>CFBundleVersion</key>
+    <string>3.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>3.0.0</string>
+    <key>CFBundleExecutable</key>
+    <string>Lysa Desktop</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>Lysa</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
