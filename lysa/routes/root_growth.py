@@ -132,6 +132,47 @@ def _polyline_length_px(pts: List[Point]) -> float:
     return total
 
 
+def _root_metrics(poly: List[Point]) -> dict:
+    """Shape metrics for a traced root polyline.
+
+    Returns:
+      tortuosity      path length / straight-line (chord) distance, >= 1.0.
+                      1.0 = perfectly straight; higher = more wandering.
+                      None if the chord is ~0 (degenerate).
+      chord_px        straight-line distance from first to last point (px).
+      angle_deg       growth direction of the chord, in DEGREES, in image
+                      coordinates where +y points DOWN (as in pixel space).
+                      0 = pointing right (+x), 90 = straight down (+y, the
+                      usual gravitropic "down the plate" direction), 180 =
+                      left, -90 = up. Measured tip-relative: from the first
+                      point (shoot) to the last (root tip).
+      deviation_deg   absolute deviation from straight-down (90°), i.e. how
+                      far the root strayed from the gravity vector. 0 = grew
+                      straight down; 90 = grew horizontally.
+    """
+    if len(poly) < 2:
+        return {"tortuosity": None, "chord_px": 0.0,
+                "angle_deg": None, "deviation_deg": None}
+    dx = poly[-1].x - poly[0].x
+    dy = poly[-1].y - poly[0].y
+    chord = math.hypot(dx, dy)
+    path_len = _polyline_length_px(poly)
+    tort = round(path_len / chord, 4) if chord > 1e-6 else None
+    if chord <= 1e-6:
+        return {"tortuosity": tort, "chord_px": round(chord, 3),
+                "angle_deg": None, "deviation_deg": None}
+    angle = math.degrees(math.atan2(dy, dx))   # +y down → +90 = down
+    deviation = abs(angle - 90.0)
+    if deviation > 180.0:
+        deviation = 360.0 - deviation
+    return {
+        "tortuosity": tort,
+        "chord_px": round(chord, 3),
+        "angle_deg": round(angle, 2),
+        "deviation_deg": round(deviation, 2),
+    }
+
+
 def _project_point_onto_polyline(
     px: float, py: float, poly: List[Point]
 ) -> Tuple[int, float, float]:
@@ -244,6 +285,112 @@ def _build_segments(
     total_px = sum(s.length_px for s in segments)
     total_phys = round(total_px * px_size, 4) if px_size else None
     return segments, total_px, total_phys, unit
+
+
+# ---------------------------------------------------------------------------
+# Auto plate detection — find rectangular plates without manual drawing
+# ---------------------------------------------------------------------------
+
+class DetectPlatesParams(BaseModel):
+    image_id: str
+    expected: Optional[int] = None     # hint: expected plate count (optional)
+    min_area_frac: float = 0.02        # ignore blobs < this fraction of image
+    invert: bool = False               # set True if plates are darker than bg
+
+
+@router.post("/detect-plates")
+def detect_plates(params: DetectPlatesParams):
+    """Auto-detect rectangular plate regions on a scan.
+
+    Approach (classical CV, no ML): downscale for speed → Otsu threshold to
+    separate plates (usually brighter agar) from the dark scanner background
+    → label connected components → keep components whose area and aspect
+    ratio look plate-like → return their bounding boxes in FULL-RESOLUTION
+    image coordinates, sorted top-to-bottom, left-to-right.
+
+    Returns {"plates": [{x,y,w,h}, ...], "count": N}. The frontend can drop
+    these straight into the existing per-plate rectangles (still editable),
+    so it augments — never replaces — the manual workflow.
+    """
+    from skimage.filters import threshold_otsu
+    from skimage.morphology import remove_small_objects, binary_closing, disk
+    from scipy import ndimage as ndi
+
+    if not store.contains(params.image_id):
+        raise HTTPException(404, "Unknown image_id")
+
+    display = store.load_display_array(params.image_id)
+    gray = _to_gray(display)
+    H, W = gray.shape[:2]
+
+    # Downscale so detection is fast on large scans; map boxes back up after.
+    # Use an integer stride for BOTH the slice and the inverse scaling so the
+    # box coordinates map back to full-res exactly (no float/int mismatch).
+    target = 1000.0
+    step = max(1, int(max(H, W) / target))
+    small = gray[::step, ::step]
+    sh, sw = small.shape[:2]
+
+    try:
+        t = float(threshold_otsu(small))
+    except Exception:
+        t = 128.0
+    # Plates brighter than background by default; invert if told otherwise.
+    mask = small < t if params.invert else small > t
+
+    mask = binary_closing(mask, disk(3))
+    min_px = int(params.min_area_frac * sh * sw)
+    # remove_small_objects renamed min_size→ deprecated in newer skimage; try
+    # the current signature and fall back so we work across versions.
+    try:
+        mask = remove_small_objects(mask, min_size=max(1, min_px))
+    except TypeError:
+        mask = remove_small_objects(mask, max(1, min_px))
+
+    labels, n = ndi.label(mask)
+    if n == 0:
+        return {"plates": [], "count": 0,
+                "note": "No plate-like regions found. Try invert=true or a "
+                        "lower min_area_frac, or draw plates manually."}
+
+    boxes = []
+    img_area = sh * sw
+    slices = ndi.find_objects(labels)
+    for sl in slices:
+        if sl is None:
+            continue
+        ys, xs = sl
+        y0, y1 = ys.start, ys.stop
+        x0, x1 = xs.start, xs.stop
+        bw, bh = (x1 - x0), (y1 - y0)
+        area = bw * bh
+        if area < min_px:
+            continue
+        # Reject extreme slivers (lids, edges) — plates are roughly squarish.
+        aspect = bw / bh if bh else 999
+        if aspect < 0.25 or aspect > 4.0:
+            continue
+        # Reject a near-whole-image blob (background captured as one object).
+        if area > 0.95 * img_area:
+            continue
+        boxes.append((x0, y0, bw, bh))
+
+    # Map back to full-res coords (multiply by the same integer stride) and
+    # sort top→bottom, left→right (row-major, bucketing rows by ~half the
+    # median plate height).
+    boxes = [(x * step, y * step, w * step, h * step)
+             for (x, y, w, h) in boxes]
+    if boxes:
+        med_h = sorted(b[3] for b in boxes)[len(boxes) // 2]
+        row_tol = max(1, med_h // 2)
+        boxes.sort(key=lambda b: (b[1] // row_tol, b[0]))
+
+    plates = [{"x": x, "y": y, "w": w, "h": h} for (x, y, w, h) in boxes]
+    note = None
+    if params.expected and len(plates) != params.expected:
+        note = (f"Found {len(plates)} plate(s), expected {params.expected}. "
+                f"Adjust min_area_frac/invert or edit the rectangles manually.")
+    return {"plates": plates, "count": len(plates), "note": note}
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +566,11 @@ def auto_trace(params: AutoTraceParams):
     px_size, unit = _pixel_size(params.image_id)
     length_phys = round(length_px * px_size, 4) if px_size else None
 
+    poly_pts = [Point(x=p["x"], y=p["y"]) for p in polyline]
+    metrics = _root_metrics(poly_pts)
+    chord_phys = (round(metrics["chord_px"] * px_size, 4)
+                  if px_size and metrics["chord_px"] else None)
+
     return {
         "polyline": polyline,
         "length_px": round(length_px, 3),
@@ -426,6 +578,11 @@ def auto_trace(params: AutoTraceParams):
         "physical_unit": unit,
         "n_points": len(polyline),
         "threshold_used": round(t, 2),
+        "tortuosity": metrics["tortuosity"],
+        "chord_px": metrics["chord_px"],
+        "chord_physical": chord_phys,
+        "angle_deg": metrics["angle_deg"],
+        "deviation_deg": metrics["deviation_deg"],
     }
 
 
@@ -440,11 +597,20 @@ def compute_segments(params: ComputeSegmentsParams):
     segs, total_px, total_phys, unit = _build_segments(
         params.polyline, params.timepoints, params.image_id
     )
+    px_size, _ = _pixel_size(params.image_id)
+    metrics = _root_metrics(params.polyline)
+    chord_phys = (round(metrics["chord_px"] * px_size, 4)
+                  if px_size and metrics["chord_px"] else None)
     return {
         "segments": [s.model_dump() for s in segs],
         "total_length_px": round(total_px, 3),
         "total_length_physical": total_phys,
         "physical_unit": unit,
+        "tortuosity": metrics["tortuosity"],
+        "chord_px": metrics["chord_px"],
+        "chord_physical": chord_phys,
+        "angle_deg": metrics["angle_deg"],
+        "deviation_deg": metrics["deviation_deg"],
     }
 
 
