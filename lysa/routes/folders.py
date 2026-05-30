@@ -59,6 +59,85 @@ async def pick_directory(prompt: str = "Select folder"):
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif"}
 
 
+@router.get("/pick-files")
+async def pick_files(prompt: str = "Select images"):
+    """
+    Open a native OS file chooser (multiple selection) and return the chosen
+    paths. macOS uses AppleScript; tkinter is the fallback elsewhere. Returns
+    {"paths": [...]} (empty list if cancelled). LIF files are intentionally
+    excluded — use the dedicated "Open LIF" flow for those.
+    """
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            # Build a newline-joined list of POSIX paths from the selection.
+            script = (
+                'set theFiles to choose file with prompt "' + prompt + '" '
+                'with multiple selections allowed\n'
+                'set AppleScript\'s text item delimiters to linefeed\n'
+                'set out to ""\n'
+                'repeat with f in theFiles\n'
+                '    set out to out & POSIX path of f & linefeed\n'
+                'end repeat\n'
+                'return out'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode != 0:
+                if "-128" in (result.stderr or "") or "User canceled" in (result.stderr or ""):
+                    return {"paths": [], "cancelled": True}
+                raise HTTPException(500, f"osascript failed: {result.stderr.strip()}")
+            paths = [p for p in result.stdout.splitlines() if p.strip()]
+            return {"paths": paths}
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            paths = filedialog.askopenfilenames(title=prompt)
+            root.destroy()
+            return {"paths": list(paths)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"File picker failed: {e}")
+
+
+@router.post("/load-files")
+async def load_files(payload: dict):
+    """Ingest an explicit list of local image file paths.
+
+    Body: {"paths": ["/abs/file1.tif", ...]}. Skips LIF and unsupported
+    extensions (mirrors load-folder); returns the same shape so the frontend
+    can reuse its handling.
+    """
+    paths = payload.get("paths") or []
+    results = []
+    for p in paths:
+        fp = Path(p)
+        if not fp.is_file():
+            results.append({"error": "not a file", "filename": fp.name})
+            continue
+        if fp.suffix.lower() not in ALLOWED_EXTENSIONS:
+            results.append({"error": f"unsupported type {fp.suffix}", "filename": fp.name})
+            continue
+        try:
+            result = ingest_image(str(fp), fp.name)
+            store.put(result["image_id"], result["entry"])
+            results.append({"image_id": result["image_id"], "metadata": result["metadata"]})
+        except Exception as e:
+            results.append({"error": str(e), "filename": fp.name})
+
+    return {
+        "loaded": sum(1 for r in results if "image_id" in r),
+        "errors": sum(1 for r in results if "error" in r),
+        "images": results,
+    }
+
+
 @router.post("/load-folder")
 async def load_folder(params: FolderLoadParams):
     """Load all supported images from a local directory."""

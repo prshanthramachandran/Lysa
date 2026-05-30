@@ -753,7 +753,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="6" opacity="0.6"/><circle cx="15" cy="12" r="6" opacity="0.6"/></svg>
             Merge
         </button>
-        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+        <button class="btn btn-primary" onclick="openImagesNative()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
             Open Images
         </button>
@@ -12284,6 +12284,39 @@ async function pickFolderForLoad() {
         }
     } catch (err) {
         alert(`Folder picker failed: ${err.message || err}`);
+    }
+}
+
+// "Open Images" — native OS file dialog, loading by path (no browser upload).
+// Falls back to the hidden <input type=file> if the native picker isn't
+// available (non-macOS without tkinter, endpoint error, or plain browser use).
+async function openImagesNative() {
+    try {
+        const pick = await fetch(`${API}/api/pick-files?prompt=${encodeURIComponent('Select images to open')}`);
+        if (!pick.ok) throw new Error('picker endpoint unavailable');
+        const { paths } = await pick.json();
+        if (!paths || paths.length === 0) return;  // cancelled or empty
+
+        const resp = await fetch(`${API}/api/load-files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || 'load failed');
+
+        for (const item of data.images) {
+            if (item.error) continue;
+            registerImageMetadata(item.image_id, item.metadata);
+        }
+        const firstValid = data.images.find(i => !i.error);
+        if (firstValid) state.activeTab = firstValid.image_id;
+        renderAll();
+    } catch (err) {
+        // Graceful fallback to the browser file chooser.
+        console.warn('Native open failed, falling back to browser picker:', err);
+        const inp = document.getElementById('fileInput');
+        if (inp) inp.click();
     }
 }
 

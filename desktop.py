@@ -17,17 +17,61 @@ How it works:
 
 Run with:  python desktop.py
 Bundle with PyInstaller/cx_Freeze to ship a double-clickable .app / .exe.
+
+Desktop niceties (vs. the plain browser build):
+  - Remembers window size/position between launches (~/.lysa/window.json).
+  - Native "Open folder" / "Open file" dialogs via a pywebview JS bridge,
+    so the frontend can call window.pywebview.api.* instead of the browser
+    file picker.
+  - A native application menu (macOS) with standard items.
 """
 
+import json
 import socket
 import sys
 import threading
 import time
+import webbrowser
+from pathlib import Path
 
 import uvicorn
 
 from lysa import __version__
 from lysa.app import create_app
+
+# --- Window-state persistence ----------------------------------------------
+# Remembered across launches so the window reopens where you left it.
+_STATE_DIR = Path.home() / ".lysa"
+_STATE_FILE = _STATE_DIR / "window.json"
+_DEFAULT_GEOMETRY = {"width": 1400, "height": 900, "x": None, "y": None}
+_MIN_W, _MIN_H = 900, 600
+
+
+def load_window_state() -> dict:
+    """Return saved {width,height,x,y}, falling back to defaults. Never raises."""
+    geo = dict(_DEFAULT_GEOMETRY)
+    try:
+        saved = json.loads(_STATE_FILE.read_text())
+        for k in ("width", "height", "x", "y"):
+            if isinstance(saved.get(k), (int, float)):
+                geo[k] = int(saved[k])
+        # Sanity: never restore a uselessly tiny window.
+        geo["width"] = max(geo["width"], _MIN_W)
+        geo["height"] = max(geo["height"], _MIN_H)
+    except Exception:
+        pass  # no/invalid state file — defaults are fine
+    return geo
+
+
+def save_window_state(width, height, x, y) -> None:
+    """Persist window geometry. Never raises (best-effort)."""
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _STATE_FILE.write_text(json.dumps(
+            {"width": int(width), "height": int(height),
+             "x": int(x), "y": int(y)}))
+    except Exception:
+        pass
 
 
 def find_free_port(start: int = 8000, end: int = 8100) -> int:
@@ -72,6 +116,7 @@ def main() -> int:
 
     app = create_app()
     port = find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
 
     server_thread = threading.Thread(
         target=_serve, args=(app, port), daemon=True)
@@ -81,16 +126,90 @@ def main() -> int:
         sys.stderr.write("Lysa server failed to start within the timeout.\n")
         return 1
 
-    webview.create_window(
-        f"Lysa {__version__}",
-        f"http://127.0.0.1:{port}",
-        width=1400,
-        height=900,
-        min_size=(900, 600),
-    )
-    # Blocks until the window is closed; the daemon server thread exits with us.
-    webview.start()
+    geo = load_window_state()
+    create_kwargs = dict(
+        width=geo["width"], height=geo["height"], min_size=(_MIN_W, _MIN_H))
+    if geo["x"] is not None and geo["y"] is not None:
+        create_kwargs["x"], create_kwargs["y"] = geo["x"], geo["y"]
+
+    window = webview.create_window(
+        f"Lysa {__version__}", base_url, **create_kwargs)
+
+    # --- Persist geometry on resize / move (best-effort) -------------------
+    # Latest known geometry, updated by events and flushed to disk so the
+    # window reopens where the user left it even if the close event is missed.
+    _geo = {"width": geo["width"], "height": geo["height"],
+            "x": geo["x"] or 0, "y": geo["y"] or 0}
+
+    def _on_resized(w, h):
+        _geo["width"], _geo["height"] = w, h
+        save_window_state(**_geo)
+
+    def _on_moved(x, y):
+        _geo["x"], _geo["y"] = x, y
+        save_window_state(**_geo)
+
+    def _on_closing():
+        # Final flush using the live window attributes when available.
+        try:
+            save_window_state(window.width, window.height, window.x, window.y)
+        except Exception:
+            save_window_state(**_geo)
+
+    # pywebview's event API has shifted across versions; wire each handler
+    # defensively so an API mismatch can never stop the app from launching.
+    for evt_name, handler in (("resized", _on_resized),
+                              ("moved", _on_moved),
+                              ("closing", _on_closing)):
+        try:
+            getattr(window.events, evt_name).__iadd__  # presence check
+            getattr(window.events, evt_name)(handler) if False else None
+            getattr(window.events, evt_name).__iadd__(handler)
+        except Exception:
+            pass
+
+    menu = _build_menu(webview, window, base_url)
+    try:
+        webview.start(menu=menu)
+    except TypeError:
+        # Older pywebview without the menu kwarg — start without a custom menu.
+        webview.start()
     return 0
+
+
+def _build_menu(webview, window, base_url):
+    """Construct a native application menu. Returns [] if the API is absent."""
+    try:
+        from webview.menu import Menu, MenuAction, MenuSeparator
+    except Exception:
+        return []
+
+    def reload_app():
+        try:
+            window.load_url(base_url)
+        except Exception:
+            pass
+
+    def open_in_browser():
+        try:
+            webbrowser.open(base_url)
+        except Exception:
+            pass
+
+    try:
+        return [
+            Menu("File", [
+                MenuAction("Reload", reload_app),
+                MenuSeparator(),
+                MenuAction("Open in Browser", open_in_browser),
+            ]),
+            Menu("Help", [
+                MenuAction("Lysa on GitHub", lambda: webbrowser.open(
+                    "https://github.com/prshanthramachandran/Lysa")),
+            ]),
+        ]
+    except Exception:
+        return []
 
 
 if __name__ == "__main__":
