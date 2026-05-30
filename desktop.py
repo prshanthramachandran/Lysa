@@ -26,7 +26,8 @@ import time
 
 import uvicorn
 
-from lysa import create_app, __version__
+from lysa import __version__
+from lysa.app import create_app
 
 
 def find_free_port(start: int = 8000, end: int = 8100) -> int:
