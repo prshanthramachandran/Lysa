@@ -12273,14 +12273,27 @@ function updateProfileInfoBar() {
 function saveExportDir(val) {
     try { localStorage.setItem('lysa.exportSaveDir', val || ''); } catch {}
 }
+// True when running inside the pywebview desktop shell (native dialog bridge).
+function hasNativeBridge() {
+    return !!(window.pywebview && window.pywebview.api && window.pywebview.api.pick_directory);
+}
+
 async function pickFolderForLoad() {
     try {
-        const resp = await fetch(`${API}/api/pick-directory?prompt=${encodeURIComponent('Select folder to load images from')}`);
-        const data = await resp.json();
-        if (!resp.ok) { alert(`Folder picker error: ${data.detail || resp.statusText}`); return; }
-        if (data.path) {
+        let path = null;
+        if (hasNativeBridge()) {
+            // Desktop: pywebview's own native folder dialog (reliable on macOS).
+            path = await window.pywebview.api.pick_directory();
+        } else {
+            // Browser: server-side OS picker via AppleScript/tkinter.
+            const resp = await fetch(`${API}/api/pick-directory?prompt=${encodeURIComponent('Select folder to load images from')}`);
+            const data = await resp.json();
+            if (!resp.ok) { alert(`Folder picker error: ${data.detail || resp.statusText}`); return; }
+            path = data.path;
+        }
+        if (path) {
             const el = document.getElementById('folderPath');
-            if (el) el.value = data.path;
+            if (el) el.value = path;
         }
     } catch (err) {
         alert(`Folder picker failed: ${err.message || err}`);
@@ -12292,9 +12305,16 @@ async function pickFolderForLoad() {
 // available (non-macOS without tkinter, endpoint error, or plain browser use).
 async function openImagesNative() {
     try {
-        const pick = await fetch(`${API}/api/pick-files?prompt=${encodeURIComponent('Select images to open')}`);
-        if (!pick.ok) throw new Error('picker endpoint unavailable');
-        const { paths } = await pick.json();
+        let paths;
+        if (hasNativeBridge()) {
+            // Desktop: pywebview native multi-select file dialog.
+            paths = await window.pywebview.api.pick_files();
+        } else {
+            // Browser: server-side OS picker.
+            const pick = await fetch(`${API}/api/pick-files?prompt=${encodeURIComponent('Select images to open')}`);
+            if (!pick.ok) throw new Error('picker endpoint unavailable');
+            paths = (await pick.json()).paths;
+        }
         if (!paths || paths.length === 0) return;  // cancelled or empty
 
         const resp = await fetch(`${API}/api/load-files`, {

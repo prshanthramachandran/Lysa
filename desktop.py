@@ -127,6 +127,14 @@ def main() -> int:
         return 1
 
     geo = load_window_state()
+
+    # JS bridge for NATIVE file/folder dialogs. On a managed Mac, the server
+    # shelling out to `osascript` (the /api/pick-* endpoints) often won't show
+    # or focus a dialog. pywebview's own create_file_dialog is attached to the
+    # window and works reliably, so in the desktop build we route picking
+    # through this bridge (exposed to JS as window.pywebview.api.*).
+    bridge = _Bridge(webview)
+
     # IMPORTANT: do NOT pass x/y to create_window. On macOS, pywebview applies
     # the initial position via a move() during window init — before the window
     # is attached to a screen — and its own move handler then dereferences
@@ -134,7 +142,9 @@ def main() -> int:
     # and defer position to the 'shown' event, where screen() is valid.
     window = webview.create_window(
         f"Lysa {__version__}", base_url,
-        width=geo["width"], height=geo["height"], min_size=(_MIN_W, _MIN_H))
+        width=geo["width"], height=geo["height"], min_size=(_MIN_W, _MIN_H),
+        js_api=bridge)
+    bridge.window = window
 
     # Latest known geometry, flushed to disk on change so the window reopens
     # where the user left it even if a later event is missed.
@@ -204,6 +214,59 @@ def main() -> int:
         # Older pywebview without the menu kwarg — start without a custom menu.
         webview.start()
     return 0
+
+
+class _Bridge:
+    """JS-exposed API for native dialogs (window.pywebview.api.* in the page).
+
+    Uses pywebview's own create_file_dialog, which is attached to the window
+    and works where server-side osascript does not. All methods return plain
+    data (paths) so the frontend can treat desktop and browser uniformly.
+    """
+
+    # Image extensions the open dialog should offer (LIF handled separately).
+    _IMG_TYPES = ("Image Files (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.gif)",)
+
+    def __init__(self, webview):
+        self._webview = webview
+        self.window = None  # set after create_window
+
+    def _folder_const(self):
+        # Newer pywebview prefers FileDialog.FOLDER; older exposes FOLDER_DIALOG.
+        try:
+            from webview import FileDialog
+            return FileDialog.FOLDER
+        except Exception:
+            return getattr(self._webview, "FOLDER_DIALOG", 20)
+
+    def _open_const(self):
+        try:
+            from webview import FileDialog
+            return FileDialog.OPEN
+        except Exception:
+            return getattr(self._webview, "OPEN_DIALOG", 10)
+
+    def pick_directory(self):
+        """Open a native folder chooser. Returns the path, or '' if cancelled."""
+        try:
+            res = self.window.create_file_dialog(self._folder_const())
+            if res:
+                return res[0] if isinstance(res, (list, tuple)) else res
+        except Exception:
+            pass
+        return ""
+
+    def pick_files(self):
+        """Open a native multi-select file chooser. Returns a list of paths."""
+        try:
+            res = self.window.create_file_dialog(
+                self._open_const(), allow_multiple=True,
+                file_types=self._IMG_TYPES)
+            if res:
+                return list(res)
+        except Exception:
+            pass
+        return []
 
 
 def _build_menu(webview, window, base_url):
