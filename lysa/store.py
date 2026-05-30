@@ -92,9 +92,12 @@ def load_array(image_id: str) -> np.ndarray:
         entry["array"] = arr
         return arr
 
-    from PIL import Image  # deferred to avoid circular import at module level
-    img = Image.open(entry["path"])
-    entry["array"] = np.array(img)
+    # Use the same robust multi-backend loader as ingestion so a file that
+    # only decodes via tifffile/OpenCV (BigTIFF, tiled, odd compression)
+    # reloads correctly on cache-miss instead of failing on bare Image.open().
+    from .image_processing import load_image_array  # deferred: avoid circular import
+    arr, _img, _loader = load_image_array(entry["path"])
+    entry["array"] = arr
     return entry["array"]
 
 
