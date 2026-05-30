@@ -127,43 +127,72 @@ def main() -> int:
         return 1
 
     geo = load_window_state()
-    create_kwargs = dict(
-        width=geo["width"], height=geo["height"], min_size=(_MIN_W, _MIN_H))
-    if geo["x"] is not None and geo["y"] is not None:
-        create_kwargs["x"], create_kwargs["y"] = geo["x"], geo["y"]
-
+    # IMPORTANT: do NOT pass x/y to create_window. On macOS, pywebview applies
+    # the initial position via a move() during window init — before the window
+    # is attached to a screen — and its own move handler then dereferences
+    # screen() (which is None at that point) and crashes. We restore size here
+    # and defer position to the 'shown' event, where screen() is valid.
     window = webview.create_window(
-        f"Lysa {__version__}", base_url, **create_kwargs)
+        f"Lysa {__version__}", base_url,
+        width=geo["width"], height=geo["height"], min_size=(_MIN_W, _MIN_H))
 
-    # --- Persist geometry on resize / move (best-effort) -------------------
-    # Latest known geometry, updated by events and flushed to disk so the
-    # window reopens where the user left it even if the close event is missed.
+    # Latest known geometry, flushed to disk on change so the window reopens
+    # where the user left it even if a later event is missed.
     _geo = {"width": geo["width"], "height": geo["height"],
-            "x": geo["x"] or 0, "y": geo["y"] or 0}
+            "x": geo["x"], "y": geo["y"]}
+
+    def _position_on_screen(x, y):
+        """True if (x, y) lies within ~any connected screen (with margin).
+
+        Guards against restoring a position from a now-disconnected monitor,
+        which would open the window off-screen. Fails open (False) if the
+        screen API isn't usable, so we simply don't restore position.
+        """
+        try:
+            for s in (webview.screens or []):
+                sx, sy = getattr(s, "x", 0), getattr(s, "y", 0)
+                sw, sh = getattr(s, "width", 0), getattr(s, "height", 0)
+                if sx - 50 <= x <= sx + sw - 50 and sy - 20 <= y <= sy + sh - 20:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _on_shown():
+        # Restore position now that the window is on a screen — only if the
+        # saved spot is actually visible on a currently-connected display.
+        if _geo["x"] is None or _geo["y"] is None:
+            return
+        if not _position_on_screen(_geo["x"], _geo["y"]):
+            return  # stale/off-screen — leave at the default placement
+        try:
+            window.move(int(_geo["x"]), int(_geo["y"]))
+        except Exception:
+            pass
 
     def _on_resized(w, h):
         _geo["width"], _geo["height"] = w, h
-        save_window_state(**_geo)
+        save_window_state(_geo["width"], _geo["height"],
+                          _geo["x"] or 0, _geo["y"] or 0)
 
     def _on_moved(x, y):
         _geo["x"], _geo["y"] = x, y
-        save_window_state(**_geo)
+        save_window_state(_geo["width"], _geo["height"], x, y)
 
     def _on_closing():
-        # Final flush using the live window attributes when available.
         try:
             save_window_state(window.width, window.height, window.x, window.y)
         except Exception:
-            save_window_state(**_geo)
+            save_window_state(_geo["width"], _geo["height"],
+                              _geo["x"] or 0, _geo["y"] or 0)
 
     # pywebview's event API has shifted across versions; wire each handler
     # defensively so an API mismatch can never stop the app from launching.
-    for evt_name, handler in (("resized", _on_resized),
+    for evt_name, handler in (("shown", _on_shown),
+                              ("resized", _on_resized),
                               ("moved", _on_moved),
                               ("closing", _on_closing)):
         try:
-            getattr(window.events, evt_name).__iadd__  # presence check
-            getattr(window.events, evt_name)(handler) if False else None
             getattr(window.events, evt_name).__iadd__(handler)
         except Exception:
             pass
