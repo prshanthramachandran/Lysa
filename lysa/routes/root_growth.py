@@ -95,6 +95,9 @@ class RootEntry(BaseModel):
     total_length_px: float = 0.0
     total_length_physical: Optional[float] = None
     physical_unit: Optional[str] = None
+    tortuosity: Optional[float] = None
+    angle_deg: Optional[float] = None
+    deviation_deg: Optional[float] = None
 
 
 class SaveSessionParams(BaseModel):
@@ -637,6 +640,12 @@ def save_session(params: SaveSessionParams):
         r.total_length_px = round(total_px, 3)
         r.total_length_physical = total_phys
         r.physical_unit = unit
+        # Recompute shape metrics server-side so the saved values are
+        # authoritative (don't trust whatever the client sent).
+        m = _root_metrics(r.polyline)
+        r.tortuosity = m["tortuosity"]
+        r.angle_deg = m["angle_deg"]
+        r.deviation_deg = m["deviation_deg"]
         if not r.root_id:
             r.root_id = uuid.uuid4().hex[:8]
         processed_roots.append(r)
@@ -728,7 +737,8 @@ def export_session(image_id: str):
     for col in segment_cols:
         headers.append(f"{col} (px)")
         headers.append(f"{col} (phys)")
-    headers += ["Total (px)", "Total (phys)", "Unit"]
+    headers += ["Total (px)", "Total (phys)", "Unit",
+                "Tortuosity", "Angle (deg)", "Deviation from down (deg)"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = bold
@@ -750,6 +760,9 @@ def export_session(image_id: str):
             root.get("total_length_px", ""),
             root.get("total_length_physical", ""),
             root.get("physical_unit", ""),
+            root.get("tortuosity", ""),
+            root.get("angle_deg", ""),
+            root.get("deviation_deg", ""),
         ]
         ws.append(row)
 

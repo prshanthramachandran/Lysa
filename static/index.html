@@ -1640,6 +1640,16 @@
                     <div style="font-size:10px; color:var(--text-secondary); margin-bottom:6px;">
                         Click-drag on the image to outline plate <b id="rgPlateProgress">1</b>. Press <b>Enter</b> or click <b>Next plate</b> to confirm.
                     </div>
+                    <button class="btn btn-sm" style="width:100%; margin-bottom:6px;" onclick="rgDetectPlates()" title="Automatically find plate rectangles (you can still edit or redraw them)">
+                        ✨ Auto-detect plates
+                    </button>
+                    <div class="toggle-row" style="margin-bottom:6px;">
+                        <span style="font-size:10px;">Plates darker than background</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="rgDetectInvert">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                     <div id="rgPlateList" style="font-size:10px; margin-bottom:6px;"></div>
                     <div style="display:flex; gap:4px;">
                         <button class="btn btn-sm" style="flex:1;" onclick="rgNextPlate()">Next plate</button>
@@ -2267,6 +2277,7 @@ const state = {
         currentPolyline: null,    // [{x,y}] from auto-trace
         currentSegments: [],
         currentTotal: { px: 0, phys: null, unit: null },
+        currentMetrics: null,     // {tortuosity, angle_deg, deviation_deg}
         traceGenotype: null,      // selected in <select>
         savedRoots: [],           // [RootEntry]
         drawingRect: null,        // {x,y,w,h} during drag
@@ -4046,6 +4057,41 @@ function _rgRefreshPlateUI() {
     document.getElementById('rgPlateProgress').textContent = rg.plates.length + 1;
 }
 
+async function rgDetectPlates() {
+    const rg = state.rootGrowth;
+    if (!rg.imageId) { _rgStatus('Start the workflow first.', true); return; }
+    _rgStatus('Detecting plates…');
+    try {
+        const res = await fetch(`${API}/api/root-growth/detect-plates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_id: rg.imageId,
+                expected: rg.numPlates || null,
+                invert: document.getElementById('rgDetectInvert').checked,
+            }),
+        });
+        if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (!data.plates || data.plates.length === 0) {
+            _rgStatus(data.note || 'No plates found — try the invert toggle or draw manually.', true);
+            return;
+        }
+        // Replace current plate boxes with the detected ones (still editable:
+        // user can Undo, redraw, or add more before moving on).
+        rg.plates = data.plates.map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
+        _rgRefreshPlateUI();
+        renderAll();
+        _rgStatus(data.note || `Detected ${data.count} plate(s). Edit/redraw if needed, then Done.`);
+    } catch (e) {
+        console.error(e);
+        _rgStatus(`Detect failed: ${e.message}`, true);
+    }
+}
+
 function rgNextPlate() {
     const rg = state.rootGrowth;
     if (rg.plates.length >= rg.numPlates) {
@@ -4225,11 +4271,24 @@ async function rgAutoTrace() {
             phys: segData.total_length_physical,
             unit: segData.physical_unit,
         };
+        // Shape metrics (tortuosity + growth angle) — present on both the
+        // auto-trace and compute-segments responses; prefer segData.
+        rg.currentMetrics = {
+            tortuosity: segData.tortuosity != null ? segData.tortuosity : data.tortuosity,
+            angle_deg: segData.angle_deg != null ? segData.angle_deg : data.angle_deg,
+            deviation_deg: segData.deviation_deg != null ? segData.deviation_deg : data.deviation_deg,
+        };
         const segEl = document.getElementById('rgCurrentSegments');
         const totalTxt = rg.currentTotal.phys != null
             ? `${rg.currentTotal.phys} ${rg.currentTotal.unit || 'px'}`
             : `${(rg.currentTotal.px || 0).toFixed(1)} px`;
-        segEl.innerHTML = `<b>Total:</b> ${totalTxt}<br>` + rg.currentSegments.map(s => {
+        const m = rg.currentMetrics;
+        const metricsTxt = (m.tortuosity != null)
+            ? `<b>Tortuosity:</b> ${m.tortuosity}` +
+              (m.angle_deg != null ? ` · <b>Angle:</b> ${m.angle_deg}° (dev ${m.deviation_deg}° from down)` : '') +
+              '<br>'
+            : '';
+        segEl.innerHTML = `<b>Total:</b> ${totalTxt}<br>` + metricsTxt + rg.currentSegments.map(s => {
             const ln = s.length_physical != null
                 ? `${s.length_physical} ${s.physical_unit || 'px'}`
                 : `${s.length_px.toFixed(1)} px`;
@@ -4263,6 +4322,9 @@ function rgSaveRoot() {
         total_length_px: rg.currentTotal.px || 0,
         total_length_physical: rg.currentTotal.phys,
         physical_unit: rg.currentTotal.unit,
+        tortuosity: rg.currentMetrics ? rg.currentMetrics.tortuosity : null,
+        angle_deg: rg.currentMetrics ? rg.currentMetrics.angle_deg : null,
+        deviation_deg: rg.currentMetrics ? rg.currentMetrics.deviation_deg : null,
     };
     rg.savedRoots.push(root);
     rgClearClicks();
