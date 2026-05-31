@@ -1684,8 +1684,15 @@
                     <div style="font-size:10px; color:var(--text-secondary); margin-bottom:6px;">
                         Genotype: <select id="rgTraceGenotype" style="background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border);"></select>
                     </div>
+                    <div class="toggle-row" style="margin-bottom:6px;">
+                        <span style="font-size:11px;" title="Click once near a root's shoot; it auto-traces to the tip. No timepoint clicks.">⚡ One-click trace</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="rgOneClick" onchange="state.rootGrowth.oneClickMode = this.checked; _rgStatus(this.checked ? 'One-click mode: click near each root\\'s shoot.' : 'Manual mode: click shoot + each timepoint.')">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                     <div style="font-size:10px; color:var(--text-secondary); margin-bottom:6px;">
-                        Click the <b>shoot</b>, then each <b>timepoint marker</b> in order. When you have at least 2 points, click <b>Auto-trace</b>.
+                        <span id="rgTraceHint">Click the <b>shoot</b>, then each <b>timepoint marker</b> in order. When you have at least 2 points, click <b>Auto-trace</b>.</span>
                     </div>
                     <div id="rgClickList" style="font-size:10px; margin-bottom:6px;"></div>
 
@@ -4455,6 +4462,7 @@ function rgHandleMouseDown(e, canvas) {
         return true;
     }
     if (rg.step === 3) {
+        if (rg.oneClickMode) { rgOneClickTrace(x, y); return true; }
         // Click = add a timepoint point
         const idx = rg.currentClicks.length;
         const label = rg.timepointLabels[idx] || ('TP' + (idx+1));
@@ -4464,6 +4472,48 @@ function rgHandleMouseDown(e, canvas) {
         return true;
     }
     return false;
+}
+
+// One-click trace: click once near a root's shoot → auto-trace to the tip.
+async function rgOneClickTrace(x, y) {
+    const rg = state.rootGrowth;
+    const genoIdx = rg.traceGenotype != null ? rg.traceGenotype : 0;
+    const plateIdx = rg.genotypePlateIdx[genoIdx] || 0;
+    const plate = rg.plates[plateIdx];
+    if (!plate) { _rgStatus('No plate for this genotype.', true); return; }
+    _rgStatus('Tracing from click…');
+    try {
+        const res = await fetch(`${API}/api/root-growth/trace-from-point`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_id: rg.imageId, plate_rect: plate, x, y,
+                threshold_method: document.getElementById('rgThresholdMethod').value,
+                manual_threshold: parseInt(document.getElementById('rgManualThresh').value),
+                smooth_sigma: parseInt(document.getElementById('rgSmooth').value) / 10,
+                invert: document.getElementById('rgInvert').checked,
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        rg.currentPolyline = data.polyline;
+        // Synthesize SHOOT + TIP clicks so save/segments machinery works.
+        const pl = data.polyline;
+        rg.currentClicks = [
+            { x: pl[0].x, y: pl[0].y, label: rg.timepointLabels[0] || 'SHOOT' },
+            { x: pl[pl.length-1].x, y: pl[pl.length-1].y, label: rg.timepointLabels[1] || 'TIP' },
+        ];
+        rg.currentSegments = [];
+        rg.currentTotal = { px: data.length_px, phys: data.length_physical, unit: data.physical_unit };
+        rg.currentMetrics = { tortuosity: data.tortuosity, angle_deg: data.angle_deg, deviation_deg: data.deviation_deg };
+        const segEl = document.getElementById('rgCurrentSegments');
+        const tt = data.length_physical != null ? `${(data.length_physical/1000).toFixed(2)} mm` : `${data.length_px.toFixed(0)} px`;
+        if (segEl) segEl.innerHTML = `<b>Length:</b> ${tt} · <b>Tort:</b> ${data.tortuosity} · <b>Angle:</b> ${data.angle_deg}°<br><i>Review the polyline; Save root to keep it.</i>`;
+        _rgRefreshClickList();
+        renderAll();
+        _rgStatus(`Traced ${data.n_points} pts. Edit if needed, then Save root.`);
+    } catch (e) {
+        _rgStatus(`Trace failed: ${e.message}`, true);
+    }
 }
 
 function rgHandleMouseMove(e, canvas) {
@@ -6157,11 +6207,15 @@ function installTiledMouseTracker(tv) {
                 rg.drawingRect = { x: px, y: py, w: 0, h: 0, _startX: px, _startY: py };
                 dragging = true;
             } else if (rg.step === 3) {
-                const idx = rg.currentClicks.length;
-                const label = rg.timepointLabels[idx] || ('TP' + (idx+1));
-                rg.currentClicks.push({ x: px, y: py, label });
-                _rgRefreshClickList();
-                redrawTiledOverlay(imgId);
+                if (rg.oneClickMode) {
+                    rgOneClickTrace(px, py);
+                } else {
+                    const idx = rg.currentClicks.length;
+                    const label = rg.timepointLabels[idx] || ('TP' + (idx+1));
+                    rg.currentClicks.push({ x: px, y: py, label });
+                    _rgRefreshClickList();
+                    redrawTiledOverlay(imgId);
+                }
             }
             e.preventDefault();
             return;

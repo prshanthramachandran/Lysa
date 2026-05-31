@@ -76,6 +76,19 @@ class AutoTraceParams(BaseModel):
                                       # components under user click points
 
 
+class TraceFromPointParams(BaseModel):
+    image_id: str
+    plate_rect: Rect
+    x: float                          # one click near the root's top (image coords)
+    y: float
+    threshold_method: str = "otsu"
+    manual_threshold: int = 128
+    invert: bool = True
+    smooth_sigma: float = 1.0
+    min_object_size: int = 50
+    snap_radius: int = 60             # px to search for the skeleton near the click
+
+
 class RootSegment(BaseModel):
     label: str              # "shoot→T24H"
     from_label: str
@@ -601,6 +614,140 @@ def _simplify_polyline(pts: List[Tuple[int, int]], step: int = 8) -> List[Tuple[
     if out[-1] != pts[-1]:
         out.append(pts[-1])
     return out
+
+
+def _trace_down_skeleton(skel, start):
+    """From `start` (y,x) on the skeleton, return the path to the geodesically
+    farthest reachable skeleton pixel that lies at or below the start row.
+
+    Used by single-click tracing: the user clicks the shoot, and the root is
+    the longest downward run of skeleton from there. Returns list of (y,x).
+    """
+    from collections import deque
+    h, w = skel.shape
+    sy, sx = start
+    prev = -np.ones((h, w), dtype=np.int64)
+    dist = -np.ones((h, w), dtype=np.float64)
+    prev[sy, sx] = sy * w + sx
+    dist[sy, sx] = 0.0
+    q = deque([(sy, sx)])
+    steps = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+    far, fard = (sy, sx), 0.0
+    while q:
+        y, x = q.popleft()
+        for dy, dx in steps:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and skel[ny, nx] and prev[ny, nx] == -1:
+                prev[ny, nx] = y * w + x
+                dist[ny, nx] = dist[y, x] + (1.4142 if dy and dx else 1.0)
+                q.append((ny, nx))
+                if ny >= sy and dist[ny, nx] > fard:
+                    fard, far = dist[ny, nx], (ny, nx)
+    path = []
+    y, x = far
+    while True:
+        path.append((y, x))
+        pp = prev[y, x]
+        py, px = divmod(int(pp), w)
+        if (py, px) == (y, x):
+            break
+        y, x = py, px
+    path.reverse()
+    return path
+
+
+@router.post("/trace-from-point")
+def trace_from_point(params: TraceFromPointParams):
+    """Trace one root from a SINGLE click — no tip click needed.
+
+    Snap the click to the nearest skeleton pixel, then walk the skeleton to its
+    farthest downward point (the root tip). Returns an editable polyline plus
+    length + shape metrics. Best-effort: where a root's skeleton is broken by a
+    faint gap the trace may stop short — the returned polyline is editable, so
+    the user drags to extend. Vertical gap-bridging reduces this.
+    """
+    from skimage.filters import threshold_otsu
+    from skimage.morphology import (
+        remove_small_objects, skeletonize, binary_closing, disk
+    )
+    from skimage.segmentation import clear_border
+    from scipy import ndimage as ndi
+
+    if not store.contains(params.image_id):
+        raise HTTPException(404, "Unknown image_id")
+
+    display = store.load_display_array(params.image_id)
+    crop, ox, oy = _crop_plate(display, params.plate_rect)
+    gray = _to_gray(crop)
+    if params.smooth_sigma > 0:
+        gray = ndi.gaussian_filter(gray, sigma=float(params.smooth_sigma))
+    if params.threshold_method == "otsu":
+        try:
+            t = float(threshold_otsu(gray))
+        except Exception:
+            t = 128.0
+    else:
+        t = float(params.manual_threshold)
+    mask = gray < t if params.invert else gray > t
+    mask = binary_closing(mask, disk(2))
+    mask = remove_small_objects(mask, min_size=int(max(1, params.min_object_size)))
+    # rim removal (always on here — single-click tracing has no click to protect
+    # other than the one we snap below, and the rim only causes mis-snaps)
+    H, W = mask.shape
+    mb = int(0.05 * min(H, W))
+    if mb > 0:
+        mask[:mb, :] = mask[-mb:, :] = False
+        mask[:, :mb] = mask[:, -mb:] = False
+    mask = clear_border(mask)
+    mask = remove_small_objects(mask, min_size=int(max(1, params.min_object_size)))
+    # bridge small vertical gaps so a fragmented root stays one path
+    mask = ndi.binary_closing(mask, structure=np.ones((9, 3)))
+
+    skel = skeletonize(mask)
+
+    cy = int(round(params.y - oy))
+    cx = int(round(params.x - ox))
+
+    # Snap the click to the nearest skeleton pixel within snap_radius.
+    def _snap(y, x, R):
+        if 0 <= y < H and 0 <= x < W and skel[y, x]:
+            return (y, x)
+        for r in range(1, R):
+            y0, y1 = max(0, y - r), min(H, y + r + 1)
+            x0, x1 = max(0, x - r), min(W, x + r + 1)
+            sub = skel[y0:y1, x0:x1]
+            if sub.any():
+                ys, xs = np.where(sub)
+                return (ys[0] + y0, xs[0] + x0)
+        return None
+
+    snapped = _snap(cy, cx, int(max(5, params.snap_radius)))
+    if snapped is None:
+        raise HTTPException(422, "No root found near the click. Click closer to "
+                                 "a root, or adjust threshold/invert.")
+
+    path = _trace_down_skeleton(skel, snapped)
+    if len(path) < 3:
+        raise HTTPException(422, "Traced path too short — click higher on the root.")
+
+    path = _simplify_polyline(path, step=6)
+    polyline = [{"x": float(x + ox), "y": float(y + oy)} for (y, x) in path]
+
+    length_px = 0.0
+    for a, b in zip(polyline[:-1], polyline[1:]):
+        length_px += math.hypot(b["x"] - a["x"], b["y"] - a["y"])
+    px_size, unit = _pixel_size(params.image_id)
+    metrics = _root_metrics([Point(x=p["x"], y=p["y"]) for p in polyline])
+    return {
+        "polyline": polyline,
+        "length_px": round(length_px, 3),
+        "length_physical": round(length_px * px_size, 4) if px_size else None,
+        "physical_unit": unit,
+        "n_points": len(polyline),
+        "tortuosity": metrics["tortuosity"],
+        "angle_deg": metrics["angle_deg"],
+        "deviation_deg": metrics["deviation_deg"],
+    }
 
 
 @router.post("/auto-trace")
