@@ -128,6 +128,80 @@ def _pixel_size(image_id: str) -> Tuple[Optional[float], Optional[str]]:
     return meta.get("pixel_size_x"), meta.get("pixel_size_unit")
 
 
+# ---------------------------------------------------------------------------
+# Calibration (physical scale: µm per pixel)
+# ---------------------------------------------------------------------------
+
+_UNIT_TO_UM = {"mm": 1000.0, "µm": 1.0, "um": 1.0, "cm": 10000.0, "nm": 0.001}
+
+
+@router.get("/calibration/{image_id}")
+def get_calibration(image_id: str):
+    """Report the active physical scale for an image and where it came from.
+
+    source is one of:
+      "manual"  – set via /calibrate (ruler), takes precedence,
+      "dpi"     – derived from the image's TIFF resolution tags at ingest,
+      "none"    – uncalibrated; lengths will be in PIXELS only.
+    """
+    if not store.contains(image_id):
+        raise HTTPException(404, "Unknown image_id")
+    meta = store.get(image_id).get("metadata", {})
+    px = meta.get("pixel_size_x")
+    unit = meta.get("pixel_size_unit")
+    source = meta.get("pixel_size_source") or ("dpi" if px else "none")
+    return {
+        "pixel_size_x": px,
+        "pixel_size_unit": unit,
+        "calibrated": px is not None,
+        "source": source,
+    }
+
+
+class CalibrateParams(BaseModel):
+    image_id: str
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    known_distance: float            # real-world distance between the 2 points
+    unit: str = "mm"                 # unit of known_distance (mm/µm/cm/nm)
+
+
+@router.post("/calibrate")
+def calibrate(params: CalibrateParams):
+    """Set an image's scale from two clicked points a known distance apart.
+
+    Computes µm/pixel = (known_distance in µm) / (pixel distance between the
+    two points), stores it on the image metadata (as pixel_size_x/y in µm,
+    source="manual"), and returns the new scale. Used with the in-frame ruler
+    when DPI is missing or you want to override it.
+    """
+    if not store.contains(params.image_id):
+        raise HTTPException(404, "Unknown image_id")
+    dist_px = math.hypot(params.x2 - params.x1, params.y2 - params.y1)
+    if dist_px < 1.0:
+        raise HTTPException(400, "The two points are too close together.")
+    if params.known_distance <= 0:
+        raise HTTPException(400, "known_distance must be positive.")
+    unit = params.unit if params.unit in _UNIT_TO_UM else "mm"
+    known_um = params.known_distance * _UNIT_TO_UM[unit]
+    um_per_px = round(known_um / dist_px, 6)
+
+    meta = store.get(params.image_id).get("metadata", {})
+    meta["pixel_size_x"] = um_per_px
+    meta["pixel_size_y"] = um_per_px
+    meta["pixel_size_unit"] = "µm"
+    meta["pixel_size_source"] = "manual"
+    return {
+        "pixel_size_x": um_per_px,
+        "pixel_size_unit": "µm",
+        "calibrated": True,
+        "source": "manual",
+        "pixel_distance": round(dist_px, 2),
+    }
+
+
 def _polyline_length_px(pts: List[Point]) -> float:
     if len(pts) < 2:
         return 0.0

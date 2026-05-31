@@ -1612,6 +1612,12 @@
             <div class="section-body">
                 <div id="rgStepIndicator" style="font-size:10px; color:var(--text-secondary); margin-bottom:8px;"></div>
 
+                <!-- Calibration scale readout + ruler tool -->
+                <div id="rgCalibBar" style="font-size:10px; margin-bottom:8px; padding:6px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px;">
+                    <span id="rgCalibText" style="color:var(--text-secondary);">Scale: —</span>
+                    <button class="btn btn-sm" style="float:right; font-size:10px; padding:1px 6px;" onclick="rgStartCalibration()" title="Click two points a known distance apart (e.g. on the ruler) to set the scale">📏 Calibrate</button>
+                </div>
+
                 <!-- STEP 0: experiment setup -->
                 <div id="rgStep0" class="rg-step">
                     <div style="font-size:11px; font-weight:bold; margin-bottom:4px;">1. Experiment setup</div>
@@ -4029,6 +4035,7 @@ function rgStartSetup() {
     rg.genotypePlateIdx = [];
     rg.genoIdx = 0;
     rg.savedRoots = [];
+    _rgRefreshCalib();   // show the active scale (DPI/manual) or uncalibrated warning
     // Try loading any existing sidecar session
     fetch(`${API}/api/root-growth/load-session/${id}`).then(r => r.json()).then(data => {
         if (data && data.exists) {
@@ -4055,6 +4062,63 @@ function _rgRefreshPlateUI() {
         ).join('<br>') || '<i>No plates yet.</i>';
     }
     document.getElementById('rgPlateProgress').textContent = rg.plates.length + 1;
+}
+
+// --- Calibration (scale readout + ruler tool) ---
+async function _rgRefreshCalib() {
+    const rg = state.rootGrowth;
+    const el = document.getElementById('rgCalibText');
+    if (!el || !rg.imageId) return;
+    try {
+        const r = await fetch(`${API}/api/root-growth/calibration/${rg.imageId}`);
+        const c = await r.json();
+        if (c.calibrated) {
+            const srcTxt = c.source === 'manual' ? 'ruler' : (c.source === 'dpi' ? 'image DPI' : c.source);
+            el.innerHTML = `Scale: <b>${(+c.pixel_size_x).toFixed(2)} ${c.pixel_size_unit}/px</b> <span style="color:var(--text-secondary)">(${srcTxt})</span>`;
+            el.style.color = '';
+        } else {
+            el.innerHTML = '⚠️ <b style="color:#e0a030;">Uncalibrated</b> — lengths will be in pixels. Click Calibrate.';
+        }
+    } catch (e) { /* leave as-is */ }
+}
+
+function rgStartCalibration() {
+    const rg = state.rootGrowth;
+    if (!rg.imageId) { _rgStatus('Open an image / start the workflow first.', true); return; }
+    rg.calibrating = true;
+    rg.calibPoints = [];
+    _rgStatus('Ruler: click the FIRST point of a known distance (e.g. a ruler tick).');
+}
+
+async function rgFinishCalibration() {
+    const rg = state.rootGrowth;
+    const pts = rg.calibPoints || [];
+    rg.calibrating = false;
+    if (pts.length < 2) { rg.calibPoints = []; return; }
+    const distStr = prompt('Real distance between the two clicked points?\nEnter a number then choose units below (e.g. 10).', '10');
+    if (distStr === null) { rg.calibPoints = []; _rgStatus('Calibration cancelled.'); redrawTiledOverlay(rg.imageId); return; }
+    const dist = parseFloat(distStr);
+    if (!(dist > 0)) { rg.calibPoints = []; _rgStatus('Invalid distance.', true); return; }
+    const unit = (prompt('Units? (mm, µm, cm)', 'mm') || 'mm').trim();
+    try {
+        const r = await fetch(`${API}/api/root-growth/calibrate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_id: rg.imageId,
+                x1: pts[0].x, y1: pts[0].y, x2: pts[1].x, y2: pts[1].y,
+                known_distance: dist, unit,
+            }),
+        });
+        const c = await r.json();
+        if (!r.ok) throw new Error(c.detail || 'calibration failed');
+        _rgStatus(`Calibrated: ${(+c.pixel_size_x).toFixed(3)} µm/px (${c.pixel_distance}px = ${dist}${unit}).`);
+        _rgRefreshCalib();
+    } catch (e) {
+        _rgStatus(`Calibration failed: ${e.message}`, true);
+    } finally {
+        rg.calibPoints = [];
+        redrawTiledOverlay(rg.imageId);
+    }
 }
 
 async function rgDetectPlates() {
@@ -6069,6 +6133,22 @@ function installTiledMouseTracker(tv) {
         const imgId = tv.imageId;
         state.activeTab = imgId;
         state._activeCanvas = el;
+
+        // --- Calibration ruler intercept (capture 2 points, any rg step) ---
+        if (state.rootGrowth && state.rootGrowth.calibrating
+                && state.rootGrowth.imageId === imgId) {
+            const rg = state.rootGrowth;
+            rg.calibPoints = rg.calibPoints || [];
+            rg.calibPoints.push({ x: px, y: py });
+            if (rg.calibPoints.length >= 2) {
+                rgFinishCalibration();   // prompt for distance + POST
+            } else {
+                _rgStatus('Ruler: click the second point of a known distance.');
+            }
+            redrawTiledOverlay(imgId);
+            e.preventDefault();
+            return;
+        }
 
         // --- Root Growth workflow intercept ---
         if (state.rootGrowth && state.rootGrowth.imageId === imgId && state.rootGrowth.step > 0) {

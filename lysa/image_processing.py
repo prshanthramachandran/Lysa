@@ -357,6 +357,10 @@ def ingest_image(file_path: str, filename: str) -> dict:
         "pixel_size_x": px_info["pixel_size_x"],
         "pixel_size_y": px_info["pixel_size_y"],
         "pixel_size_unit": px_info["pixel_size_unit"],
+        # Provenance of the scale: "dpi" when recovered from image resolution
+        # tags at ingest, else "none". A manual ruler calibration overwrites
+        # this with "manual" via the /calibrate endpoint.
+        "pixel_size_source": "dpi" if px_info["pixel_size_x"] else "none",
         "loader": loader,
     }
 
