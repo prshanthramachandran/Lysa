@@ -297,26 +297,38 @@ def _build_segments(
 class DetectPlatesParams(BaseModel):
     image_id: str
     expected: Optional[int] = None     # hint: expected plate count (optional)
-    min_area_frac: float = 0.02        # ignore blobs < this fraction of image
-    invert: bool = False               # set True if plates are darker than bg
+    min_area_frac: float = 0.03        # ignore blobs < this fraction of image
+    # Plates are usually the BRIGHT agar regions on the scanner bed. Set
+    # dark_plates=True for the rarer case of dark plates on a light bed.
+    dark_plates: bool = False
+    sep_strength: int = 9              # erosion kernel — higher = separate
+                                       # plates that touch/bridge more aggressively
 
 
 @router.post("/detect-plates")
 def detect_plates(params: DetectPlatesParams):
-    """Auto-detect rectangular plate regions on a scan.
+    """Auto-detect square-ish plate regions on a scan.
 
-    Approach (classical CV, no ML): downscale for speed → Otsu threshold to
-    separate plates (usually brighter agar) from the dark scanner background
-    → label connected components → keep components whose area and aspect
-    ratio look plate-like → return their bounding boxes in FULL-RESOLUTION
-    image coordinates, sorted top-to-bottom, left-to-right.
+    Real agar-plate scans are typically BRIGHT plates on a bright scanner bed,
+    separated only by thin dark rims — so a plain bright/dark threshold merges
+    everything into one blob. Instead we:
 
-    Returns {"plates": [{x,y,w,h}, ...], "count": N}. The frontend can drop
-    these straight into the existing per-plate rectangles (still editable),
-    so it augments — never replaces — the manual workflow.
+      1. downscale for speed,
+      2. threshold to the bright (agar) class — or dark, if dark_plates,
+      3. **erode** hard so thin bridges through rims / background between
+         plates are severed, isolating each plate interior as its own blob,
+      4. keep large, square-ish components (rejects the ruler / colour strip /
+         slivers), and
+      5. dilate each bounding box back out to undo the erosion shrinkage.
+
+    Boxes are returned in FULL-RESOLUTION coords, sorted row-major. They drop
+    straight into the editable per-plate rectangles, so this augments — never
+    replaces — the manual workflow. Tunable via dark_plates / sep_strength /
+    min_area_frac if a particular scan needs it.
     """
+    import numpy as np
     from skimage.filters import threshold_otsu
-    from skimage.morphology import remove_small_objects, binary_closing, disk
+    from skimage.morphology import binary_opening, remove_small_objects, disk
     from scipy import ndimage as ndi
 
     if not store.contains(params.image_id):
@@ -326,63 +338,62 @@ def detect_plates(params: DetectPlatesParams):
     gray = _to_gray(display)
     H, W = gray.shape[:2]
 
-    # Downscale so detection is fast on large scans; map boxes back up after.
-    # Use an integer stride for BOTH the slice and the inverse scaling so the
-    # box coordinates map back to full-res exactly (no float/int mismatch).
-    target = 1000.0
-    step = max(1, int(max(H, W) / target))
+    # Downscale (integer stride both ways so boxes map back exactly).
+    step = max(1, int(max(H, W) / 1000.0))
     small = gray[::step, ::step]
     sh, sw = small.shape[:2]
+    img_area = sh * sw
+    min_px = int(params.min_area_frac * img_area)
 
     try:
         t = float(threshold_otsu(small))
     except Exception:
         t = 128.0
-    # Plates brighter than background by default; invert if told otherwise.
-    mask = small < t if params.invert else small > t
 
-    mask = binary_closing(mask, disk(3))
-    min_px = int(params.min_area_frac * sh * sw)
-    # remove_small_objects renamed min_size→ deprecated in newer skimage; try
-    # the current signature and fall back so we work across versions.
+    # Class of interest: bright agar (default) or dark plates, split at Otsu.
+    # (A margin below t was tried to keep dim agar, but it pulls a bright
+    # scanner background into the bright class and merges everything — plain
+    # Otsu separates plate-vs-bed cleanly on both real scans and synthetic.)
+    region = small < t if params.dark_plates else small > t
+    region = binary_opening(region, disk(2))
+
+    # Sever bridges (rims, background necks, ruler stems) between plates.
+    k = max(3, int(params.sep_strength))
+    eroded = ndi.binary_erosion(region, structure=np.ones((k, k)))
     try:
-        mask = remove_small_objects(mask, min_size=max(1, min_px))
+        eroded = remove_small_objects(eroded, min_size=max(1, min_px))
     except TypeError:
-        mask = remove_small_objects(mask, max(1, min_px))
+        eroded = remove_small_objects(eroded, max(1, min_px))
 
-    labels, n = ndi.label(mask)
+    labels, n = ndi.label(eroded)
     if n == 0:
         return {"plates": [], "count": 0,
-                "note": "No plate-like regions found. Try invert=true or a "
-                        "lower min_area_frac, or draw plates manually."}
+                "note": "No plate-like regions found. Try toggling "
+                        "'plates darker than background', or draw manually."}
 
+    pad = k // 2  # dilate boxes back by ~the erosion radius
     boxes = []
-    img_area = sh * sw
-    slices = ndi.find_objects(labels)
-    for sl in slices:
+    for sl in ndi.find_objects(labels):
         if sl is None:
             continue
         ys, xs = sl
-        y0, y1 = ys.start, ys.stop
-        x0, x1 = xs.start, xs.stop
-        bw, bh = (x1 - x0), (y1 - y0)
+        bw, bh = xs.stop - xs.start, ys.stop - ys.start
         area = bw * bh
         if area < min_px:
             continue
-        # Reject extreme slivers (lids, edges) — plates are roughly squarish.
         aspect = bw / bh if bh else 999
-        if aspect < 0.25 or aspect > 4.0:
+        if aspect < 0.4 or aspect > 2.5:        # plates are roughly square
             continue
-        # Reject a near-whole-image blob (background captured as one object).
-        if area > 0.95 * img_area:
+        if area > 0.95 * img_area:              # whole-image background blob
             continue
-        boxes.append((x0, y0, bw, bh))
+        x0 = max(0, xs.start - pad)
+        y0 = max(0, ys.start - pad)
+        boxes.append((x0, y0,
+                      min(sw - x0, bw + 2 * pad),
+                      min(sh - y0, bh + 2 * pad)))
 
-    # Map back to full-res coords (multiply by the same integer stride) and
-    # sort top→bottom, left→right (row-major, bucketing rows by ~half the
-    # median plate height).
-    boxes = [(x * step, y * step, w * step, h * step)
-             for (x, y, w, h) in boxes]
+    # Map back to full-res, sort row-major (bucket rows by ~half median height).
+    boxes = [(x * step, y * step, w * step, h * step) for (x, y, w, h) in boxes]
     if boxes:
         med_h = sorted(b[3] for b in boxes)[len(boxes) // 2]
         row_tol = max(1, med_h // 2)
@@ -392,7 +403,8 @@ def detect_plates(params: DetectPlatesParams):
     note = None
     if params.expected and len(plates) != params.expected:
         note = (f"Found {len(plates)} plate(s), expected {params.expected}. "
-                f"Adjust min_area_frac/invert or edit the rectangles manually.")
+                f"Try the 'plates darker than background' toggle, adjust "
+                f"separation strength, or edit the rectangles manually.")
     return {"plates": plates, "count": len(plates), "note": note}
 
 

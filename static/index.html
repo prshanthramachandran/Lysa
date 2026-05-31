@@ -4068,7 +4068,7 @@ async function rgDetectPlates() {
             body: JSON.stringify({
                 image_id: rg.imageId,
                 expected: rg.numPlates || null,
-                invert: document.getElementById('rgDetectInvert').checked,
+                dark_plates: document.getElementById('rgDetectInvert').checked,
             }),
         });
         if (!res.ok) {
