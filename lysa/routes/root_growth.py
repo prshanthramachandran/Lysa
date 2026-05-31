@@ -392,6 +392,28 @@ def detect_plates(params: DetectPlatesParams):
                       min(sw - x0, bw + 2 * pad),
                       min(sh - y0, bh + 2 * pad)))
 
+    # Suppress "merged" super-boxes: when erosion fails to fully sever two
+    # plates, one big blob spanning both survives ALONGSIDE the two correctly
+    # separated plate blobs. Drop any box that mostly covers a smaller box
+    # (its children) — keep the tighter individual plates.
+    def _contains(big, small, frac=0.75):
+        bx, by, bw, bh = big
+        sx, sy, sw, sh = small
+        ix0, iy0 = max(bx, sx), max(by, sy)
+        ix1, iy1 = min(bx + bw, sx + sw), min(by + bh, sy + sh)
+        inter = max(0, ix1 - ix0) * max(0, iy1 - iy0)
+        small_area = sw * sh
+        return small_area > 0 and inter / small_area >= frac
+
+    boxes.sort(key=lambda b: b[2] * b[3])  # small → large
+    kept = []
+    for b in boxes:
+        # If b engulfs any already-kept (smaller) box, b is a merged super-box.
+        if any(_contains(b, s) for s in kept):
+            continue
+        kept.append(b)
+    boxes = kept
+
     # Map back to full-res, sort row-major (bucket rows by ~half median height).
     boxes = [(x * step, y * step, w * step, h * step) for (x, y, w, h) in boxes]
     if boxes:
