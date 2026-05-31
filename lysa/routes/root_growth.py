@@ -72,6 +72,8 @@ class AutoTraceParams(BaseModel):
     invert: bool = True               # dark roots on light agar → invert
     smooth_sigma: float = 1.0
     min_object_size: int = 50
+    remove_rim: bool = True           # drop plate rim from the mask; preserves
+                                      # components under user click points
 
 
 class RootSegment(BaseModel):
@@ -537,6 +539,7 @@ def auto_trace(params: AutoTraceParams):
     from skimage.morphology import (
         remove_small_objects, skeletonize, binary_closing, disk
     )
+    from skimage.segmentation import clear_border
     from scipy import ndimage as ndi
 
     if not store.contains(params.image_id):
@@ -564,6 +567,42 @@ def auto_trace(params: AutoTraceParams):
     # Clean up
     mask = binary_closing(mask, disk(2))
     mask = remove_small_objects(mask, min_size=int(max(1, params.min_object_size)))
+
+    # --- Rim removal (on by default) -----------------------------------------
+    # The plate rim hugs the crop edge and otherwise dominates the mask (it was
+    # 47-75% of root pixels on real scans). Inset the border + clear_border to
+    # drop it. CRUCIAL: preserve any connected component that contains a user
+    # click (e.g. a shoot clicked near the top edge) so tracing never loses its
+    # start/end anchors to rim cleanup.
+    if params.remove_rim:
+        H, W = mask.shape
+        # Label the full mask first so we can rescue click-bearing components.
+        lbl_full, _ = ndi.label(mask)
+        protect = set()
+        for pt in params.points:
+            py = int(round(pt.y - oy)); px = int(round(pt.x - ox))
+            if 0 <= py < H and 0 <= px < W and lbl_full[py, px]:
+                protect.add(int(lbl_full[py, px]))
+            else:
+                # Click not on a mask pixel — protect the nearest component in a
+                # small neighbourhood so a slightly-off shoot click still holds.
+                y0, y1 = max(0, py - 15), min(H, py + 16)
+                x0, x1 = max(0, px - 15), min(W, px + 16)
+                sub = lbl_full[y0:y1, x0:x1]
+                vals = sub[sub > 0]
+                if vals.size:
+                    protect.add(int(np.bincount(vals).argmax()))
+        protected_mask = np.isin(lbl_full, list(protect)) if protect else np.zeros_like(mask)
+
+        mb = int(0.05 * min(H, W))
+        rimless = mask.copy()
+        if mb > 0:
+            rimless[:mb, :] = rimless[-mb:, :] = False
+            rimless[:, :mb] = rimless[:, -mb:] = False
+        rimless = clear_border(rimless)
+        rimless = remove_small_objects(rimless, min_size=int(max(1, params.min_object_size)))
+        # Add the protected (click-bearing) components back in full.
+        mask = rimless | protected_mask
 
     # Skeletonise so BFS walks along the 1-pixel centre line
     skel = skeletonize(mask)
